@@ -292,9 +292,9 @@ Exception
 | 코드베이스 | 새 프로젝트 (기존 참조) | 깔끔한 아키텍처, 레거시 없음 |
 | 언어 | Python 3.11+ | IDA 플러그인과 동일, zeromcp 재활용 |
 | 인스턴스 지정 | Tool 파라미터 (`instance_id`) | 모든 tool에 optional 파라미터 주입 |
-| Instance ID | 3자리 hex hash (e.g., `a3f`) | 짧고 거의 고유, 사용 편의성 |
+| Instance ID | 4자리 base36 (e.g., `k7m2`) | 짧고 읽기 쉬우면서 167만 조합으로 충돌 거의 없음 |
 | ID 생성 입력 | `hash(pid:port:idb_path)` | 바이너리 교체 시 ID 자동 변경 (세대 관리) |
-| 바이너리 교체 감지 | IDA IDB_Hooks + UI_Hooks | closebase/database_inited 이벤트로 감지 |
+| 바이너리 교체 감지 | Dual: IDA Hooks (primary) + 요청 시 검증 (fallback) | 훅 실패에도 안전 |
 | 만료 인스턴스 처리 | expired 섹션에 이력 보관 | LLM에 교체 안내, 자동 active 전환 |
 | Tool 발견 | IDA 인스턴스에서 동적 발견 | 미래 호환, 플러그인 버전 독립 |
 | 파일 락킹 | 플랫폼 추상화 (fcntl/msvcrt) | Windows + Unix 지원 |
@@ -372,17 +372,37 @@ ida-multi-mcp/
 }
 ```
 
-**Instance ID 생성 (Generation 기반)**:
+**Instance ID 생성 (Generation 기반, 4자리 base36)**:
 
 바이너리가 교체되면 ID도 자동 변경되어, 이전 분석 컨텍스트의 만료를 보장합니다.
 
 ```python
-# 입력: pid + port + idb_path (바이너리 경로)
-hashlib.sha256(f"{pid}:{port}:{idb_path}".encode()).hexdigest()[:3]
-# 예: "a3f", "b12", "7c0"
-# 4096 가지 조합 (동시 2~10개 인스턴스에 충분)
-# 충돌 시: 4자리로 확장 ("a3f" → "a3f1")
+import hashlib
+
+def generate_instance_id(pid: int, port: int, idb_path: str) -> str:
+    """4자리 base36 ID 생성 (a-z, 0-9)"""
+    raw = hashlib.sha256(f"{pid}:{port}:{idb_path}".encode()).digest()
+    # 첫 4바이트를 정수로 변환 후 base36 인코딩
+    n = int.from_bytes(raw[:4], "big") % (36 ** 4)  # 0 ~ 1,679,615
+    chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+    result = ""
+    for _ in range(4):
+        result = chars[n % 36] + result
+        n //= 36
+    return result
+    # 예: "k7m2", "px3a", "9bf1"
 ```
+
+**ID 형식 비교**:
+
+| 방식 | 길이 | 조합 수 | 충돌 확률 (10개) | 예시 |
+|------|------|---------|-----------------|------|
+| 3자리 hex | 3 | 4,096 | ~1.1% | `a3f` |
+| **4자리 base36** | **4** | **1,679,616** | **~0.003%** | **`k7m2`** |
+| 6자리 hex | 6 | 16,777,216 | ~0.0003% | `a3f1b2` |
+
+4자리 base36을 채택: hex와 같은 길이에서 **400배 많은 조합**, 사람이 읽고 말하기 쉬움.
+충돌 시: 5자리로 확장 (`k7m2` → `k7m2a`, 6000만 조합).
 
 **왜 `idb_path`를 포함하는가?**
 - 같은 IDA 프로세스(PID)에서 분석 대상을 바꾸면 주소/함수/타입 등 모든 컨텍스트가 무효
@@ -392,13 +412,13 @@ hashlib.sha256(f"{pid}:{port}:{idb_path}".encode()).hexdigest()[:3]
 ```
 시나리오:
   IDA PID=12345, port=49152, malware.exe 분석 중
-  → ID = hash("12345:49152:C:/samples/malware.exe")[:3] = "a3f"
+  → ID = base36(hash("12345:49152:C:/samples/malware.exe")) = "k7m2"
 
   사용자가 driver.sys로 교체
-  → 기존 "a3f" unregister + expired 처리
+  → 기존 "k7m2" unregister + expired 처리
   → HTTP 서버 재시작 (새 포트 49153)
-  → ID = hash("12345:49153:C:/samples/driver.sys")[:3] = "d7e"
-  → LLM이 "a3f"로 요청 시: "Instance 'a3f' expired, replaced by 'd7e' (driver.sys)"
+  → ID = base36(hash("12345:49153:C:/samples/driver.sys")) = "px3a"
+  → LLM이 "k7m2"로 요청 시: "Instance 'k7m2' expired, replaced by 'px3a' (driver.sys)"
 ```
 
 **Registry API**:
@@ -497,9 +517,16 @@ class MultiMCP(idaapi.plugin_t):
         self.mcp.stop()
 ```
 
-**바이너리 교체 감지 (Generation 관리)**:
+**바이너리 교체 감지 (Dual Strategy)**:
 
-IDA의 이벤트 훅으로 분석 대상 변경을 실시간 감지합니다:
+두 가지 전략을 병행하여 안정성을 확보합니다:
+
+| 전략 | 방식 | 장점 | 한계 |
+|------|------|------|------|
+| **Primary**: IDA Hooks | `IDB_Hooks.closebase()` + `UI_Hooks.database_inited()` 콜백 | 즉시 감지, 지연 없음 | IDA 버전/환경에 따라 훅 미작동 가능 |
+| **Fallback**: 요청 시 검증 | 매 tool call 라우팅 전 바이너리 경로 조회 비교 | 훅 실패해도 안전 | 요청당 1회 경량 API 호출 오버헤드 |
+
+**전략 1 (Primary) — IDA Event Hooks**:
 
 ```python
 # plugin/registration.py
@@ -509,12 +536,10 @@ class IDBChangeHandler(idaapi.IDB_Hooks):
 
     def closebase(self):
         """IDB가 닫힐 때 (바이너리 교체 또는 IDA 종료 전)"""
-        # 현재 인스턴스를 expired로 이동
         registry.expire_instance(
             instance_id=current_instance_id,
             reason="binary_changed"
         )
-        # HTTP 서버 정지
         MCP_SERVER.stop()
         return 0
 
@@ -524,38 +549,95 @@ class UIChangeHandler(idaapi.UI_Hooks):
 
     def database_inited(self, is_new_database, idc_script):
         """새 IDB가 열린 후 (새 바이너리 분석 준비 완료)"""
-        # 새 포트로 HTTP 서버 재시작
         MCP_SERVER.serve("127.0.0.1", 0, request_handler=IdaMcpHttpRequestHandler)
         new_port = MCP_SERVER._http_server.server_address[1]
 
-        # 새 instance_id 생성 (idb_path가 변경되었으므로 자동으로 새 ID)
         new_id = register_instance(
-            pid=os.getpid(),
-            host="127.0.0.1",
-            port=new_port,
-            binary_name=idaapi.get_input_file_path(),
-            arch=get_arch()
+            pid=os.getpid(), host="127.0.0.1", port=new_port,
+            binary_name=idaapi.get_input_file_path(), arch=get_arch()
         )
 
         # 만료된 이전 ID에 교체 정보 기록
-        registry.get_expired(old_instance_id)["replaced_by"] = new_id
+        if old_instance_id:
+            expired = registry.get_expired(old_instance_id)
+            if expired:
+                expired["replaced_by"] = new_id
 
-        # active_instance 자동 갱신
         registry.set_active(new_id)
         return 0
 ```
+
+**전략 2 (Fallback) — 요청 시 검증**:
+
+IDA Hook이 실패하더라도, Router가 매 요청마다 바이너리 경로를 검증합니다:
+
+```python
+# router.py
+
+class InstanceRouter:
+    def route_request(self, method, arguments):
+        instance_id = arguments.pop("instance_id", None) or self.registry.get_active()
+        instance = self.registry.get_instance(instance_id)
+        if not instance:
+            return self._handle_missing(instance_id)
+
+        # Fallback 검증: IDA에 현재 바이너리 경로 조회
+        current_path = self._query_binary_path(instance)
+        if current_path and current_path != instance["binary_path"]:
+            # 바이너리가 바뀌었으나 Hook이 미작동 → 수동 만료 처리
+            self.registry.expire_instance(instance_id, reason="binary_changed_detected")
+            new_id = self._re_register_instance(instance, current_path)
+            return {
+                "error": f"Instance '{instance_id}' binary changed: "
+                         f"{instance['binary_name']} → {os.path.basename(current_path)}. "
+                         f"New instance: '{new_id}'",
+                "replacement": new_id
+            }
+
+        return self._forward(instance, method, arguments)
+
+    def _query_binary_path(self, instance) -> str | None:
+        """IDA 인스턴스에 현재 분석 중인 바이너리 경로를 조회 (경량 API)"""
+        try:
+            conn = http.client.HTTPConnection(instance["host"], instance["port"], timeout=5)
+            # resources/read로 idb metadata 조회 (기존 ida-pro-mcp의 ida://idb/metadata)
+            request = {
+                "jsonrpc": "2.0", "id": 1,
+                "method": "resources/read",
+                "params": {"uri": "ida://idb/metadata"}
+            }
+            conn.request("POST", "/mcp", json.dumps(request))
+            response = json.loads(conn.getresponse().read())
+            # metadata에서 path 추출
+            contents = response.get("result", {}).get("contents", [{}])
+            if contents:
+                metadata = json.loads(contents[0].get("text", "{}"))
+                return metadata.get("path")
+        except Exception:
+            return None  # 연결 실패 시 검증 스킵 (health check가 처리)
+```
+
+**Fallback 최적화**:
+- `_query_binary_path()`는 `ida://idb/metadata` 리소스를 조회 — 기존 API 재사용, 추가 구현 불필요
+- 캐시: 마지막 검증 시간을 기록하여 **5초 이내 재요청은 스킵** (과도한 오버헤드 방지)
+- 검증 실패(연결 불가)는 무시 — health check 모듈이 별도 처리
 
 **라이프사이클 전체 흐름**:
 ```
 IDA 시작
   → PLUGIN_FIX로 자동 로드
   → init(): IDB_Hooks, UI_Hooks 등록
-  → database_inited(): port 0 서버 시작, Registry 등록, ID="a3f"
+  → database_inited(): port 0 서버 시작, Registry 등록, ID="k7m2"
 
 사용자가 다른 바이너리 열기 (File → Open)
-  → closebase(): "a3f" 만료 처리, 서버 정지
-  → database_inited(): 새 서버 시작, Registry 등록, ID="d7e"
-  → 만료 기록: a3f.replaced_by = "d7e"
+  [Hook 작동 시 - Primary]
+    → closebase(): "k7m2" 만료 처리, 서버 정지
+    → database_inited(): 새 서버 시작, Registry 등록, ID="px3a"
+
+  [Hook 미작동 시 - Fallback]
+    → LLM이 tool 호출 → Router가 ida://idb/metadata 조회
+    → binary_path 불일치 감지 → "k7m2" 만료 + 재등록 → ID="px3a"
+    → LLM에 교체 안내 반환
 
 IDA 종료
   → closebase(): 현재 ID 만료 처리 (reason="ida_closed")
@@ -728,11 +810,11 @@ ida-multi-mcp config
 | Task | 설명 | 파일 |
 |------|------|------|
 | 1.1 | 프로젝트 스캐폴딩 (pyproject.toml, 패키지 구조, zeromcp 벤더링) | `pyproject.toml`, `src/`, `vendor/` |
-| 1.2 | Instance ID 모듈 (Generation 기반: `hash(pid:port:idb_path)[:3]`, 충돌 처리) | `instance_id.py` |
+| 1.2 | Instance ID 모듈 (4자리 base36, Generation 기반: `hash(pid:port:idb_path)`, 충돌 처리) | `instance_id.py` |
 | 1.3 | Registry 모듈 (JSON R/W, 파일 락킹, CRUD 오퍼레이션) | `registry.py`, `filelock.py` |
 | 1.4 | Plugin HTTP 서버 (port 0 바인딩) | `plugin/http_server.py` |
 | 1.5 | Plugin 엔트리 포인트 (PLUGIN_FIX, 자동 시작) | `plugin/ida_multi_mcp.py` |
-| 1.6 | Registration 로직 (등록/해제/하트비트/IDB 변경 감지 훅) | `plugin/registration.py` |
+| 1.6 | Registration 로직 (등록/해제/하트비트/IDB 변경 감지: Hook + Fallback 검증) | `plugin/registration.py` |
 
 ### Phase 2: MCP Router — 단일 MCP 서버 + 라우팅
 
@@ -769,8 +851,9 @@ ida-multi-mcp config
 |--------|--------|------|----------|
 | Registry 파일 손상 (동시 쓰기) | 높음 | 낮음 | 파일 락킹 + atomic write (temp→rename) |
 | IDA 비정상 종료 (cleanup 없이) | 중간 | 중간 | 하트비트 타임아웃 + 프로세스 생존 체크 |
-| Instance ID 충돌 | 낮음 | 매우 낮음 | 4096 조합 / <10 인스턴스, 4자리 폴백 |
-| 바이너리 교체 시 stale 컨텍스트 | 높음 | 중간 | Generation 기반 ID (`idb_path` 포함), IDB_Hooks로 자동 만료+재등록 |
+| Instance ID 충돌 | 낮음 | 매우 낮음 | 4자리 base36 = 167만 조합 / <10 인스턴스, 5자리 폴백 |
+| 바이너리 교체 시 stale 컨텍스트 | 높음 | 중간 | Dual Strategy: IDA Hooks(primary) + 요청 시 metadata 검증(fallback) |
+| IDA Hook 미작동 | 중간 | 낮음 | Fallback 검증이 매 요청 시 바이너리 경로 비교, 5초 캐시로 오버헤드 최소화 |
 | Dynamic Tool Discovery 지연 | 낮음 | 낮음 | 스키마 캐싱, 요청 시 갱신 |
 | Windows 파일 락킹 차이 | 중간 | 중간 | 플랫폼 추상화 모듈 |
 | 기존 ida-pro-mcp와의 공존 | 중간 | 높음 | 문서화: 둘 중 하나만 사용 또는 공존 가이드 |
@@ -794,19 +877,19 @@ ida-multi-mcp config
 ### 7.1 멀웨어 분석 워크플로우
 
 ```
-1. IDA Pro에서 dropper.exe 열기 → 자동 등록 (a3f)
-2. IDA Pro에서 payload.dll 열기 → 자동 등록 (b12)
-3. IDA Pro에서 c2_client.exe 열기 → 자동 등록 (7c0)
+1. IDA Pro에서 dropper.exe 열기 → 자동 등록 (k7m2)
+2. IDA Pro에서 payload.dll 열기 → 자동 등록 (px3a)
+3. IDA Pro에서 c2_client.exe 열기 → 자동 등록 (9bf1)
 
 4. LLM에게 요청:
-   "a3f(dropper.exe)의 main 함수를 디컴파일하고,
-    b12(payload.dll)의 export 함수 목록을 보여줘.
+   "k7m2(dropper.exe)의 main 함수를 디컴파일하고,
+    px3a(payload.dll)의 export 함수 목록을 보여줘.
     dropper가 payload의 어떤 함수를 호출하는지 분석해줘."
 
 5. LLM이 자동으로:
-   - decompile(instance_id="a3f", addr="main")
-   - list_funcs(instance_id="b12", filter="Dll*")
-   - xrefs_to(instance_id="a3f", addrs="LoadLibrary")
+   - decompile(instance_id="k7m2", addr="main")
+   - list_funcs(instance_id="px3a", filter="Dll*")
+   - xrefs_to(instance_id="k7m2", addrs="LoadLibrary")
    → 크로스 바이너리 분석 수행
 ```
 
