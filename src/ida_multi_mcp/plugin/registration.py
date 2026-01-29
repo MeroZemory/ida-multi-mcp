@@ -96,14 +96,32 @@ def get_binary_metadata():
         binary_name = os.path.basename(binary_path)
 
         # Get IDB path (the .idb/.i64 database file)
-        idb_path = idc.get_idb_path() if hasattr(idc, 'get_idb_path') else idaapi.get_path(idaapi.PATH_TYPE_IDB)
+        idb_path = None
+        if hasattr(idc, 'get_idb_path'):
+            idb_path = idc.get_idb_path()
+        if not idb_path:
+            try:
+                idb_path = idaapi.get_path(idaapi.PATH_TYPE_IDB)
+            except AttributeError:
+                pass
         if not idb_path:
             idb_path = binary_path  # Fallback to binary path
 
-        # Get architecture
-        inf = idaapi.get_inf_structure()
-        is_64bit = inf.is_64bit()
-        procname = inf.procname or "unknown"
+        # Get architecture (IDA 9.x removed get_inf_structure)
+        try:
+            # IDA 9.x+
+            import ida_ida
+            is_64bit = ida_ida.inf_is_64bit()
+            procname = ida_ida.inf_get_procname() or "unknown"
+        except (ImportError, AttributeError):
+            try:
+                # IDA 8.x
+                inf = idaapi.get_inf_structure()
+                is_64bit = inf.is_64bit()
+                procname = inf.procname or "unknown"
+            except AttributeError:
+                is_64bit = False
+                procname = "unknown"
 
         arch = f"{procname}-{'64' if is_64bit else '32'}"
 
