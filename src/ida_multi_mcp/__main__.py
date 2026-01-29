@@ -3,6 +3,7 @@
 Provides commands for running the server, listing instances, and managing installation.
 """
 
+import os
 import sys
 import argparse
 import json
@@ -41,86 +42,145 @@ def cmd_list(args):
         print()
 
 
+def _get_ida_plugins_dir(custom_dir: str | None = None) -> Path:
+    """Detect the IDA Pro plugins directory.
+
+    Args:
+        custom_dir: Custom IDA directory override
+
+    Returns:
+        Path to IDA plugins directory
+    """
+    if custom_dir:
+        return Path(custom_dir) / "plugins"
+
+    # Platform-specific defaults
+    if sys.platform == "win32":
+        # Windows: %APPDATA%/Hex-Rays/IDA Pro/plugins/
+        appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+        return appdata / "Hex-Rays" / "IDA Pro" / "plugins"
+    elif sys.platform == "darwin":
+        # macOS: ~/.idapro/plugins/
+        return Path.home() / ".idapro" / "plugins"
+    else:
+        # Linux: ~/.idapro/plugins/
+        return Path.home() / ".idapro" / "plugins"
+
+
 def cmd_install(args):
     """Install the IDA plugin and configure MCP clients."""
-    print("Installing ida-multi-mcp...")
+    print("Installing ida-multi-mcp...\n")
 
-    # 1. Install IDA plugin
-    plugin_source = Path(__file__).parent / "plugin"
-    ida_plugins_dir = Path.home() / "idapro" / "plugins"
+    # 1. Check prerequisites
+    try:
+        import ida_multi_mcp
+        print(f"  [ok] ida-multi-mcp package found (v{ida_multi_mcp.__version__})")
+    except ImportError:
+        print("  [!!] ida-multi-mcp package not found in Python path")
+        print("       Install with: pip install ida-multi-mcp")
 
-    if args.ida_dir:
-        ida_plugins_dir = Path(args.ida_dir) / "plugins"
+    # Check if ida-pro-mcp is available (optional — only needed at IDA runtime)
+    try:
+        # Just check importability, don't actually load (needs IDA)
+        import importlib.util
+        spec = importlib.util.find_spec("ida_mcp")
+        if spec:
+            print("  [ok] ida-pro-mcp (ida_mcp) package found")
+        else:
+            print("  [!!] ida-pro-mcp (ida_mcp) package not found")
+            print("       Install with: pip install ida-pro-mcp")
+            print("       (Required for IDA tools — the plugin will not work without it)")
+    except Exception:
+        print("  [--] Could not check for ida-pro-mcp package")
+
+    # 2. Install IDA plugin loader
+    ida_plugins_dir = _get_ida_plugins_dir(args.ida_dir)
 
     if not ida_plugins_dir.exists():
-        print(f"Creating IDA plugins directory: {ida_plugins_dir}")
+        print(f"\n  Creating IDA plugins directory: {ida_plugins_dir}")
         ida_plugins_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy plugin files
-    plugin_dest = ida_plugins_dir / "ida_multi_mcp"
-    if plugin_dest.exists():
-        print(f"Removing existing plugin at {plugin_dest}")
-        shutil.rmtree(plugin_dest)
+    # Copy the loader file as ida_multi_mcp.py into IDA's plugins directory
+    loader_source = Path(__file__).parent / "plugin" / "ida_multi_mcp_loader.py"
+    loader_dest = ida_plugins_dir / "ida_multi_mcp.py"
 
-    print(f"Copying plugin to {plugin_dest}")
-    shutil.copytree(plugin_source, plugin_dest)
+    # Remove existing original ida_mcp.py if present (our plugin replaces it)
+    old_plugin = ida_plugins_dir / "ida_mcp.py"
+    if old_plugin.exists():
+        print(f"\n  Found existing ida_mcp.py (original ida-pro-mcp plugin)")
+        print(f"  Renaming to ida_mcp.py.bak (ida-multi-mcp replaces it)")
+        old_plugin.rename(ida_plugins_dir / "ida_mcp.py.bak")
 
-    print("\n✓ IDA plugin installed successfully!")
+    # Try symlink first (development-friendly), fall back to copy
+    if loader_dest.exists() or loader_dest.is_symlink():
+        loader_dest.unlink()
 
-    # 2. Show MCP client configuration
-    print("\n" + "="*60)
-    print("MCP Client Configuration")
-    print("="*60)
-    print("\nAdd this to your MCP client configuration:")
-    print("\nClaude Desktop (claude_desktop_config.json):")
-    print(json.dumps({
+    try:
+        loader_dest.symlink_to(loader_source)
+        print(f"\n  Symlinked plugin: {loader_dest} -> {loader_source}")
+    except (OSError, NotImplementedError):
+        shutil.copy2(loader_source, loader_dest)
+        print(f"\n  Copied plugin to: {loader_dest}")
+
+    print("\n  [ok] IDA plugin installed!")
+
+    # 3. Show MCP client configuration
+    mcp_config = {
         "mcpServers": {
             "ida-multi-mcp": {
                 "command": "ida-multi-mcp",
                 "args": ["serve"]
             }
         }
-    }, indent=2))
+    }
 
-    print("\nCursor (.cursor/config.json):")
-    print(json.dumps({
-        "mcp": {
-            "servers": {
-                "ida-multi-mcp": {
-                    "command": "ida-multi-mcp",
-                    "args": ["serve"]
-                }
-            }
-        }
-    }, indent=2))
+    print("\n" + "=" * 60)
+    print("MCP Client Configuration")
+    print("=" * 60)
+    print("\nAdd this to your MCP client config file:\n")
+    print(json.dumps(mcp_config, indent=2))
 
-    print("\n" + "="*60)
+    print("\nConfig file locations:")
+    print("  Claude Desktop: claude_desktop_config.json")
+    print("  Claude Code:    .claude/config.json (mcp_servers key)")
+    print("  Cursor:         .cursor/mcp.json")
+    print("  Windsurf:       .codeium/windsurf/mcp_config.json")
+
+    print("\n" + "=" * 60)
     print("\nNext steps:")
-    print("1. Restart your MCP client (Claude Desktop / Cursor)")
-    print("2. Open IDA Pro - the plugin will auto-register")
-    print("3. Use 'ida-multi-mcp list' to verify instances")
-    print("="*60)
+    print("  1. Add the MCP config above to your client")
+    print("  2. Open IDA Pro — the plugin auto-loads (PLUGIN_FIX)")
+    print("  3. Run 'ida-multi-mcp list' to verify instances")
+    print("=" * 60)
 
 
 def cmd_uninstall(args):
     """Uninstall the IDA plugin."""
     print("Uninstalling ida-multi-mcp...")
 
-    ida_plugins_dir = Path.home() / "idapro" / "plugins"
-    if args.ida_dir:
-        ida_plugins_dir = Path(args.ida_dir) / "plugins"
+    ida_plugins_dir = _get_ida_plugins_dir(args.ida_dir)
+    loader_dest = ida_plugins_dir / "ida_multi_mcp.py"
 
-    plugin_dest = ida_plugins_dir / "ida_multi_mcp"
+    if loader_dest.exists() or loader_dest.is_symlink():
+        loader_dest.unlink()
+        print(f"  Removed plugin: {loader_dest}")
+    else:
+        print(f"  Plugin not found at {loader_dest}")
 
-    if not plugin_dest.exists():
-        print(f"Plugin not found at {plugin_dest}")
-        return
+    # Restore original ida_mcp.py if backed up
+    backup = ida_plugins_dir / "ida_mcp.py.bak"
+    if backup.exists():
+        backup.rename(ida_plugins_dir / "ida_mcp.py")
+        print("  Restored original ida_mcp.py from backup")
 
-    print(f"Removing plugin from {plugin_dest}")
-    shutil.rmtree(plugin_dest)
+    # Clean up registry
+    registry_dir = Path.home() / ".ida-mcp"
+    if registry_dir.exists():
+        shutil.rmtree(registry_dir)
+        print(f"  Removed registry: {registry_dir}")
 
-    print("\n✓ IDA plugin uninstalled successfully!")
-    print("\nRemember to remove ida-multi-mcp from your MCP client configuration.")
+    print("\n  [ok] ida-multi-mcp uninstalled!")
+    print("\n  Remember to remove ida-multi-mcp from your MCP client config.")
 
 
 def cmd_config(args):

@@ -1,44 +1,84 @@
 """IDA Pro plugin for ida-multi-mcp.
 
-Auto-registers with the central registry and runs an MCP HTTP server.
+Replaces the original ida_mcp.py plugin loader. Does everything the original
+does (starts MCP HTTP server with all 71+ tools) PLUS auto-registers with
+the central instance registry for multi-instance support.
+
+Requires:
+- ida-pro-mcp's ida_mcp package to be installed (provides all IDA tools)
+- ida-multi-mcp package to be installed (provides registry)
 """
 
 import os
 import sys
 import threading
-import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import idaapi
-import idc
 
-# Add vendor directory to path for zeromcp
-_vendor_dir = Path(__file__).parent.parent / "vendor"
-if str(_vendor_dir) not in sys.path:
-    sys.path.insert(0, str(_vendor_dir))
+# Import registration functions (add parent to path for ida_multi_mcp imports)
+_pkg_dir = str(Path(__file__).parent.parent.parent)
+if _pkg_dir not in sys.path:
+    sys.path.insert(0, _pkg_dir)
 
-from zeromcp.mcp import McpServer
-
-# Import registration functions
-from .registration import (
+from ida_multi_mcp.plugin.registration import (
     register_instance,
     unregister_instance,
     update_heartbeat,
-    get_binary_metadata
+    get_binary_metadata,
 )
 
 
+def _unload_package(package_name: str):
+    """Remove every module that belongs to the package from sys.modules."""
+    to_remove = [
+        mod_name
+        for mod_name in sys.modules
+        if mod_name == package_name or mod_name.startswith(package_name + ".")
+    ]
+    for mod_name in to_remove:
+        del sys.modules[mod_name]
+
+
+def _load_ida_mcp():
+    """Load the ida_mcp package (from ida-pro-mcp) and return key components.
+
+    Returns:
+        Tuple of (MCP_SERVER, IdaMcpHttpRequestHandler, init_caches)
+
+    Raises:
+        ImportError: If ida_mcp package is not available
+    """
+    # Force fresh load to pick up any changes
+    _unload_package("ida_mcp")
+
+    if TYPE_CHECKING:
+        from ida_mcp import MCP_SERVER, IdaMcpHttpRequestHandler, init_caches
+    else:
+        from ida_mcp import MCP_SERVER, IdaMcpHttpRequestHandler, init_caches
+
+    return MCP_SERVER, IdaMcpHttpRequestHandler, init_caches
+
+
 class IdaMultiMcpPlugin(idaapi.plugin_t):
-    """IDA plugin that registers with the multi-instance MCP server."""
+    """IDA plugin that runs MCP server and registers with central registry.
+
+    This plugin replaces the original ida_mcp.py loader. It:
+    1. Loads the ida_mcp package (all 71+ tools and 24 resources)
+    2. Starts an HTTP server on an OS-assigned port (port 0)
+    3. Registers with the central instance registry (~/.ida-mcp/instances.json)
+    4. Sends periodic heartbeats
+    5. Unregisters on database close or plugin termination
+    """
 
     flags = idaapi.PLUGIN_FIX  # Auto-load on startup
     comment = "Multi-instance MCP server plugin"
-    help = "Registers this IDA instance with ida-multi-mcp"
+    help = "Runs MCP server and registers with ida-multi-mcp"
     wanted_name = "ida-multi-mcp"
     wanted_hotkey = ""
 
     def __init__(self):
-        """Initialize the plugin."""
         super().__init__()
         self.mcp_server = None
         self.stop_event = threading.Event()
@@ -48,14 +88,12 @@ class IdaMultiMcpPlugin(idaapi.plugin_t):
         self.hooks_installed = False
 
     def init(self):
-        """Plugin initialization."""
-        print("[ida-multi-mcp] Plugin loaded")
+        """Plugin initialization — install hooks, start if DB already open."""
+        print("[ida-multi-mcp] Plugin loaded (PLUGIN_FIX)")
 
-        # Don't start server yet - wait for database to be ready
-        # Install hooks to detect when database is ready
+        # Install hooks for database lifecycle events
         self.idb_hooks = IdbHooks(self)
         self.ui_hooks = UiHooks(self)
-
         self.idb_hooks.hook()
         self.ui_hooks.hook()
         self.hooks_installed = True
@@ -67,40 +105,46 @@ class IdaMultiMcpPlugin(idaapi.plugin_t):
         return idaapi.PLUGIN_KEEP
 
     def start_server(self):
-        """Start the MCP server and register with the central registry."""
+        """Start the MCP server with all IDA tools and register with registry."""
         if self.mcp_server and self.mcp_server._running:
             print("[ida-multi-mcp] Server already running")
             return
 
         print("[ida-multi-mcp] Starting MCP server...")
 
-        # Get binary metadata
+        # Get binary metadata for registration
         metadata = get_binary_metadata()
 
-        # Create MCP server instance
-        self.mcp_server = McpServer(
-            name="ida-multi-mcp",
-            version="1.0.0"
-        )
-
-        # TODO: Register MCP tools/resources here
-        # For now, we have a minimal server that just handles the protocol
+        try:
+            # Load the ida_mcp package (provides MCP_SERVER with 71+ tools)
+            mcp_server, handler_class, init_caches = _load_ida_mcp()
+        except ImportError as e:
+            print(f"[ida-multi-mcp] ERROR: ida_mcp package not found: {e}")
+            print("[ida-multi-mcp] Install ida-pro-mcp first: pip install ida-pro-mcp")
+            return
 
         try:
-            # Start HTTP server on port 0 (OS-assigned)
-            # The serve() method binds synchronously, so we can get the port immediately
-            self.mcp_server.serve(
+            # Initialize caches (function cache, etc.)
+            init_caches()
+        except Exception as e:
+            print(f"[ida-multi-mcp] Cache init warning: {e}")
+
+        try:
+            # Start HTTP server on port 0 (OS-assigned) — key difference from original!
+            mcp_server.serve(
                 host="127.0.0.1",
                 port=0,
-                background=True
+                background=True,
+                request_handler=handler_class,
             )
+            self.mcp_server = mcp_server
 
             # Get the actual port assigned by the OS
             if self.mcp_server._http_server:
                 self.server_port = self.mcp_server._http_server.server_address[1]
-                print(f"[ida-multi-mcp] Server listening on port {self.server_port}")
+                print(f"[ida-multi-mcp] Server listening on 127.0.0.1:{self.server_port}")
 
-                # Register with central registry
+                # Register with central instance registry
                 self.instance_id = register_instance(
                     pid=os.getpid(),
                     port=self.server_port,
@@ -108,104 +152,115 @@ class IdaMultiMcpPlugin(idaapi.plugin_t):
                     binary_path=metadata["binary_path"],
                     binary_name=metadata["binary_name"],
                     arch=metadata["arch"],
-                    host="127.0.0.1"
+                    host="127.0.0.1",
                 )
-
-                print(f"[ida-multi-mcp] Registered as instance '{self.instance_id}'")
+                print(f"[ida-multi-mcp] Registered as instance '{self.instance_id}' "
+                      f"({metadata['binary_name']})")
 
                 # Start heartbeat thread
+                self.stop_event.clear()
                 self.heartbeat_thread = threading.Thread(
                     target=self._heartbeat_loop,
-                    daemon=True
+                    daemon=True,
                 )
                 self.heartbeat_thread.start()
-
             else:
                 print("[ida-multi-mcp] Failed to get server port")
 
-        except Exception as e:
-            print(f"[ida-multi-mcp] Failed to start server: {e}")
-            import traceback
-            traceback.print_exc()
+        except OSError as e:
+            if e.errno in (48, 98, 10048):  # Address already in use
+                print(f"[ida-multi-mcp] Error: Port binding failed")
+            else:
+                print(f"[ida-multi-mcp] Failed to start server: {e}")
+                import traceback
+                traceback.print_exc()
 
     def _heartbeat_loop(self):
-        """Send periodic heartbeats to the central registry."""
+        """Send periodic heartbeats to the central registry (every 60s)."""
         while not self.stop_event.is_set():
             try:
                 if self.instance_id:
                     update_heartbeat(self.instance_id)
             except Exception as e:
                 print(f"[ida-multi-mcp] Heartbeat error: {e}")
-
-            # Wait 60 seconds or until stop event
             self.stop_event.wait(timeout=60.0)
 
     def stop_server(self):
-        """Stop the server and unregister from the central registry."""
+        """Stop the MCP server and unregister from the central registry."""
+        if not self.mcp_server:
+            return
+
         print("[ida-multi-mcp] Stopping server...")
 
         # Stop heartbeat
         self.stop_event.set()
         if self.heartbeat_thread:
             self.heartbeat_thread.join(timeout=2.0)
+            self.heartbeat_thread = None
 
         # Unregister from central registry
         if self.instance_id:
             try:
                 unregister_instance(self.instance_id)
+                print(f"[ida-multi-mcp] Unregistered instance '{self.instance_id}'")
             except Exception as e:
                 print(f"[ida-multi-mcp] Failed to unregister: {e}")
+            self.instance_id = None
 
-        # Stop MCP server
+        # Stop MCP HTTP server
         if self.mcp_server:
             self.mcp_server.stop()
             self.mcp_server = None
 
+        self.server_port = None
+
     def run(self, arg):
-        """Plugin run method (called by hotkey, not used here)."""
-        pass
+        """Toggle server on/off when activated via menu or hotkey."""
+        if self.mcp_server and self.mcp_server._running:
+            self.stop_server()
+        else:
+            self.start_server()
 
     def term(self):
-        """Plugin termination."""
+        """Plugin termination — cleanup everything."""
         print("[ida-multi-mcp] Plugin terminating")
 
-        # Unhook
         if self.hooks_installed:
             self.idb_hooks.unhook()
             self.ui_hooks.unhook()
+            self.hooks_installed = False
 
-        # Stop server
         self.stop_server()
 
 
 class IdbHooks(idaapi.IDB_Hooks):
-    """IDB hooks for detecting database close."""
+    """IDB hooks for detecting database close (binary change detection)."""
 
     def __init__(self, plugin):
         super().__init__()
         self.plugin = plugin
 
     def closebase(self):
-        """Called when database is closed."""
+        """Called when database is being closed — stop server and unregister."""
         print("[ida-multi-mcp] Database closing")
         self.plugin.stop_server()
         return 0
 
 
 class UiHooks(idaapi.UI_Hooks):
-    """UI hooks for detecting database open."""
+    """UI hooks for detecting database initialization."""
 
     def __init__(self, plugin):
         super().__init__()
         self.plugin = plugin
 
     def database_inited(self, is_new_database, idc_script):
-        """Called when database is initialized."""
+        """Called when a new database is initialized — start server."""
         print("[ida-multi-mcp] Database initialized")
         self.plugin.start_server()
         return 0
 
 
 def PLUGIN_ENTRY():
-    """Plugin entry point."""
+    """IDA plugin entry point."""
     return IdaMultiMcpPlugin()
