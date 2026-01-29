@@ -1,0 +1,28 @@
+# oh-my-claudecode state
+.omc/
+
+# Reference projects (embedded git repos, clone separately)
+references/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
