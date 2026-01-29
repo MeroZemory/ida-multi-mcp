@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=7.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ida-multi-mcp"
+version = "0.1.0"
+description = "Multi-instance IDA Pro MCP server for simultaneous reverse engineering"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = []
+
+[project.scripts]
+ida-multi-mcp = "ida_multi_mcp.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["ida_multi_mcp*"]
+
+[tool.setuptools.package-data]
+ida_multi_mcp = ["vendor/**/*"]
