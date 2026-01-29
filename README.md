@@ -40,31 +40,52 @@ MCP Client (Claude, Cursor, etc.)
 
 ## Installation
 
-### Step 1: Install the Package
+### For Humans
+
+The easiest way to install is to let your AI agent handle it. Copy and paste one of these prompts into your AI tool:
+
+**Claude Code / AmpCode:**
+> Install and configure ida-multi-mcp by following the instructions here: https://raw.githubusercontent.com/MeroZemory/ida-multi-mcp/main/docs/installation.md
+
+**Cursor:**
+> @Web fetch https://raw.githubusercontent.com/MeroZemory/ida-multi-mcp/main/docs/installation.md and follow the installation steps.
+
+Or install manually:
 
 ```bash
+# 1. Install packages
 pip install git+https://github.com/MeroZemory/ida-multi-mcp.git
-```
-
-### Step 2: Install IDA Tools
-
-```bash
 pip install ida-pro-mcp
+
+# 2. Install IDA plugin
+ida-multi-mcp install
+
+# 3. Add MCP server to your client (Claude Code example)
+claude mcp add ida-multi-mcp -- ida-multi-mcp serve
 ```
 
-### Step 3: Install IDA Plugin and Configure MCP Client
+### For AI Agents
+
+Fetch and follow the installation guide:
 
 ```bash
-ida-multi-mcp install
+curl -s https://raw.githubusercontent.com/MeroZemory/ida-multi-mcp/main/docs/installation.md
 ```
 
-This command:
-- Copies the plugin loader to your IDA plugins directory
-- Shows you the MCP client configuration to add
+The guide covers:
+1. Package installation (`pip install`)
+2. IDA plugin setup (`ida-multi-mcp install`)
+3. MCP client configuration (Claude Code, Claude Desktop, Cursor, Windsurf)
+4. Verification steps
 
-### Step 4: Configure Your MCP Client
+### MCP Client Configuration
 
-The `install` command displays the configuration. Add this to your MCP client config:
+After installation, add this to your MCP client config:
+
+**Claude Code** (recommended):
+```bash
+claude mcp add ida-multi-mcp -- ida-multi-mcp serve
+```
 
 **Claude Desktop** (`claude_desktop_config.json`):
 ```json
@@ -78,19 +99,7 @@ The `install` command displays the configuration. Add this to your MCP client co
 }
 ```
 
-**Cursor** (`.cursor/mcp.json`):
-```json
-{
-  "mcpServers": {
-    "ida-multi-mcp": {
-      "command": "ida-multi-mcp",
-      "args": ["serve"]
-    }
-  }
-}
-```
-
-**Windsurf** (`.codeium/windsurf/mcp_config.json`):
+**Cursor** (`.cursor/mcp.json`) / **Windsurf** (`.codeium/windsurf/mcp_config.json`):
 ```json
 {
   "mcpServers": {

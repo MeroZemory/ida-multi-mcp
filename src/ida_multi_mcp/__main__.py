@@ -79,7 +79,7 @@ def cmd_install(args):
         print("  [!!] ida-multi-mcp package not found in Python path")
         print("       Install with: pip install ida-multi-mcp")
 
-    # Check if ida-pro-mcp is available (optional — only needed at IDA runtime)
+    # Check if ida-pro-mcp is available (optional -only needed at IDA runtime)
     try:
         # Just check importability, don't actually load (needs IDA)
         import importlib.util
@@ -89,7 +89,7 @@ def cmd_install(args):
         else:
             print("  [!!] ida-pro-mcp (ida_mcp) package not found")
             print("       Install with: pip install ida-pro-mcp")
-            print("       (Required for IDA tools — the plugin will not work without it)")
+            print("       (Required for IDA tools -the plugin will not work without it)")
     except Exception:
         print("  [--] Could not check for ida-pro-mcp package")
 
@@ -150,7 +150,7 @@ def cmd_install(args):
     print("\n" + "=" * 60)
     print("\nNext steps:")
     print("  1. Add the MCP config above to your client")
-    print("  2. Open IDA Pro — the plugin auto-loads (PLUGIN_FIX)")
+    print("  2. Open IDA Pro -the plugin auto-loads (PLUGIN_FIX)")
     print("  3. Run 'ida-multi-mcp list' to verify instances")
     print("=" * 60)
 
