@@ -9,7 +9,7 @@ import time
 from typing import Any
 
 from .registry import InstanceRegistry
-from .health import query_binary_path
+from .health import query_binary_metadata
 
 
 class InstanceRouter:
@@ -80,8 +80,10 @@ class InstanceRouter:
         return self._send_request(instance_info, method, forward_params)
 
     def _verify_binary_path(self, instance_id: str, instance_info: dict) -> bool:
-        """Verify instance binary path matches cached path.
+        """Verify instance is still analyzing the same binary.
 
+        Compares by binary name (module) since the metadata resource returns
+        the IDB path, not the original binary path.
         Uses 5-second cache to avoid excessive queries.
 
         Args:
@@ -89,30 +91,33 @@ class InstanceRouter:
             instance_info: Instance metadata
 
         Returns:
-            True if binary path matches or cannot be verified
+            True if binary matches or cannot be verified
         """
         now = time.time()
 
         # Check cache
         if instance_id in self._binary_path_cache:
-            cached_path, cached_time = self._binary_path_cache[instance_id]
+            cached_name, cached_time = self._binary_path_cache[instance_id]
             if now - cached_time < self._cache_timeout:
-                return cached_path == instance_info.get("binary_path")
+                return cached_name == instance_info.get("binary_name")
 
-        # Query fresh binary path
+        # Query fresh binary metadata
         host = instance_info.get("host", "127.0.0.1")
         port = instance_info.get("port")
-        current_path = query_binary_path(host, port)
+        metadata = query_binary_metadata(host, port)
+
+        # Extract binary name (module) from metadata
+        current_name = metadata.get("module") if metadata else None
 
         # Update cache
-        self._binary_path_cache[instance_id] = (current_path, now)
+        self._binary_path_cache[instance_id] = (current_name, now)
 
         # If we couldn't query, assume it's valid (benefit of doubt)
-        if current_path is None:
+        if current_name is None:
             return True
 
-        # Compare paths
-        return current_path == instance_info.get("binary_path")
+        # Compare by binary name
+        return current_name == instance_info.get("binary_name")
 
     def _send_request(self, instance_info: dict, method: str, params: dict) -> dict[str, Any]:
         """Send HTTP request to IDA instance.

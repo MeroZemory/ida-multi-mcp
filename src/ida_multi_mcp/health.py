@@ -119,10 +119,10 @@ def cleanup_stale_instances(registry: "InstanceRegistry", timeout_seconds: int =
     return removed
 
 
-def query_binary_path(host: str, port: int, timeout: float = 5.0) -> str | None:
-    """Query an IDA instance for its current binary path.
+def query_binary_metadata(host: str, port: int, timeout: float = 5.0) -> dict | None:
+    """Query an IDA instance for its current binary metadata.
 
-    Uses the ida://idb/metadata resource to get the current file path.
+    Uses the ida://idb/metadata resource to get the current file info.
     This is the fallback mechanism for detecting binary changes when
     IDA hooks don't fire.
 
@@ -132,7 +132,8 @@ def query_binary_path(host: str, port: int, timeout: float = 5.0) -> str | None:
         timeout: Connection timeout
 
     Returns:
-        Binary file path, or None if query fails
+        Metadata dict with 'path' (IDB path) and 'module' (binary name),
+        or None if query fails
     """
     try:
         conn = http.client.HTTPConnection(host, port, timeout=timeout)
@@ -147,13 +148,12 @@ def query_binary_path(host: str, port: int, timeout: float = 5.0) -> str | None:
         data = json.loads(response.read().decode())
         conn.close()
 
-        # Extract path from metadata resource response
+        # Extract metadata from resource response
         result = data.get("result", {})
         contents = result.get("contents", [])
         if contents:
             text = contents[0].get("text", "{}")
-            metadata = json.loads(text)
-            return metadata.get("path")
+            return json.loads(text)
     except Exception:
         pass
     return None
