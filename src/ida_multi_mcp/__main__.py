@@ -79,19 +79,6 @@ def cmd_install(args):
         print("  [!!] ida-multi-mcp package not found in Python path")
         print("       Install with: pip install ida-multi-mcp")
 
-    # Check if ida-pro-mcp is installed (ida_mcp module only works inside IDA)
-    try:
-        import importlib.util
-        spec = importlib.util.find_spec("ida_pro_mcp")
-        if spec:
-            print("  [ok] ida-pro-mcp package found")
-        else:
-            print("  [!!] ida-pro-mcp package not found")
-            print("       Install with: pip install ida-pro-mcp")
-            print("       (Required for IDA tools - the plugin will not work without it)")
-    except Exception:
-        print("  [--] Could not check for ida-pro-mcp package")
-
     # 2. Install IDA plugin loader
     ida_plugins_dir = _get_ida_plugins_dir(args.ida_dir)
 
@@ -99,13 +86,23 @@ def cmd_install(args):
         print(f"\n  Creating IDA plugins directory: {ida_plugins_dir}")
         ida_plugins_dir.mkdir(parents=True, exist_ok=True)
 
+    # Check for ida_mcp package in IDA plugins directory
+    ida_mcp_pkg = ida_plugins_dir / "ida_mcp"
+    ida_mcp_loader = ida_plugins_dir / "ida_mcp.py"
+    if ida_mcp_pkg.exists() or ida_mcp_loader.exists():
+        print("  [ok] ida_mcp package found in IDA plugins directory")
+    else:
+        print("  [!!] ida_mcp package not found in IDA plugins directory")
+        print(f"       Expected at: {ida_mcp_pkg}")
+        print("       Run: ida-pro-mcp --install (from the ida-pro-mcp project)")
+        print("       (Required - provides 71+ IDA tools that ida-multi-mcp routes)")
+
     # Copy the loader file as ida_multi_mcp.py into IDA's plugins directory
     loader_source = Path(__file__).parent / "plugin" / "ida_multi_mcp_loader.py"
     loader_dest = ida_plugins_dir / "ida_multi_mcp.py"
 
     # Coexistence: ida_mcp.py (original) and ida_multi_mcp.py (ours) can both exist
-    old_plugin = ida_plugins_dir / "ida_mcp.py"
-    if old_plugin.exists():
+    if ida_mcp_loader.exists():
         print(f"\n  Note: Found existing ida_mcp.py (original ida-pro-mcp plugin)")
         print(f"  Both plugins can coexist. To avoid conflicts, disable one:")
         print(f"  - Remove ida_mcp.py to use only ida-multi-mcp")

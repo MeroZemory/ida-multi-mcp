@@ -11,10 +11,6 @@ requires-python = ">=3.11"
 license = {text = "MIT"}
 dependencies = []
 
-[project.optional-dependencies]
-# ida-pro-mcp provides the 71+ IDA tools; only needed inside IDA Pro
-ida = ["ida-pro-mcp"]
-
 [project.scripts]
 ida-multi-mcp = "ida_multi_mcp.__main__:main"
 

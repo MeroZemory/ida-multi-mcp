@@ -36,7 +36,7 @@ MCP Client (Claude, Cursor, etc.)
 
 - Python 3.11 or later
 - IDA Pro 8.3+ (9.0 recommended)
-- `ida-pro-mcp` package (provides IDA tools)
+- `ida_mcp` package installed in IDA plugins directory (from [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp))
 
 ## Installation
 
@@ -53,14 +53,17 @@ The easiest way to install is to let your AI agent handle it. Copy and paste one
 Or install manually:
 
 ```bash
-# 1. Install packages
+# 1. Install ida-multi-mcp
 pip install git+https://github.com/MeroZemory/ida-multi-mcp.git
-pip install ida-pro-mcp
 
-# 2. Install IDA plugin
+# 2. Ensure ida_mcp is installed in IDA (from ida-pro-mcp project)
+#    Skip if you already have ida_mcp.py in your IDA plugins directory
+pip install ida-pro-mcp && ida-pro-mcp --install
+
+# 3. Install IDA plugin
 ida-multi-mcp install
 
-# 3. Add MCP server to your client (Claude Code example)
+# 4. Add MCP server to your client (Claude Code example)
 claude mcp add ida-multi-mcp -- ida-multi-mcp serve
 ```
 

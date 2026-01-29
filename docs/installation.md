@@ -14,13 +14,18 @@ This guide is for AI agents. Follow each step exactly.
 pip install git+https://github.com/MeroZemory/ida-multi-mcp.git
 ```
 
-## Step 2: Install ida-pro-mcp (IDA tools provider)
+## Step 2: Ensure ida_mcp is installed in IDA
 
+The `ida_mcp` package (from the ida-pro-mcp project) must be installed in your IDA plugins directory.
+It provides the 71+ IDA tools and 24 resources that ida-multi-mcp routes.
+
+If you haven't installed it yet, follow the ida-pro-mcp installation guide:
 ```bash
 pip install ida-pro-mcp
+ida-pro-mcp --install
 ```
 
-This provides the 71+ IDA tools and 24 resources that ida-multi-mcp routes.
+This places `ida_mcp.py` and the `ida_mcp/` package into IDA's plugins directory.
 
 ## Step 3: Install IDA Plugin
 
