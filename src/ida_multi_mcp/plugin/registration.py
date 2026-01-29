@@ -10,7 +10,7 @@ import http.client
 from pathlib import Path
 
 
-def register_instance(pid: int, port: int, binary_path: str, **metadata) -> str:
+def register_instance(pid: int, port: int, idb_path: str, **metadata) -> str:
     """Register this IDA instance with the central registry.
 
     Uses file-based registry at ~/.ida-mcp/instances.json.
@@ -18,8 +18,8 @@ def register_instance(pid: int, port: int, binary_path: str, **metadata) -> str:
     Args:
         pid: Process ID
         port: MCP server port
-        binary_path: Path to the binary being analyzed
-        **metadata: Additional metadata (binary_name, arch, host)
+        idb_path: Path to the IDB file being analyzed
+        **metadata: Additional metadata (binary_name, binary_path, arch, host)
 
     Returns:
         Generated instance ID
@@ -35,7 +35,7 @@ def register_instance(pid: int, port: int, binary_path: str, **metadata) -> str:
     from ida_multi_mcp.registry import InstanceRegistry
 
     registry = InstanceRegistry(registry_path)
-    instance_id = registry.register(pid, port, binary_path, **metadata)
+    instance_id = registry.register(pid, port, idb_path, **metadata)
 
     print(f"[ida-multi-mcp] Registered as instance '{instance_id}'")
     return instance_id
@@ -95,6 +95,11 @@ def get_binary_metadata():
         binary_path = idaapi.get_input_file_path() or "unknown"
         binary_name = os.path.basename(binary_path)
 
+        # Get IDB path (the .idb/.i64 database file)
+        idb_path = idc.get_idb_path() if hasattr(idc, 'get_idb_path') else idaapi.get_path(idaapi.PATH_TYPE_IDB)
+        if not idb_path:
+            idb_path = binary_path  # Fallback to binary path
+
         # Get architecture
         inf = idaapi.get_inf_structure()
         is_64bit = inf.is_64bit()
@@ -105,6 +110,7 @@ def get_binary_metadata():
         return {
             "binary_name": binary_name,
             "binary_path": binary_path,
+            "idb_path": idb_path,
             "arch": arch
         }
     except Exception as e:
@@ -112,5 +118,6 @@ def get_binary_metadata():
         return {
             "binary_name": "unknown",
             "binary_path": "unknown",
+            "idb_path": "unknown",
             "arch": "unknown"
         }

@@ -56,9 +56,9 @@ class InstanceRouter:
         # Check if instance exists
         if instance_info is None:
             # Check if it was expired
-            expired = self.registry.get_expired()
-            if instance_id in expired:
-                return self._handle_expired_instance(instance_id, expired[instance_id])
+            expired_info = self.registry.get_expired(instance_id)
+            if expired_info is not None:
+                return self._handle_expired_instance(instance_id, expired_info)
             else:
                 return self._handle_missing_instance(instance_id)
 
@@ -69,8 +69,15 @@ class InstanceRouter:
                 "hint": "Use list_instances() to see current instances."
             }
 
+        # Remove instance_id from arguments before forwarding to IDA
+        forward_params = params.copy()
+        if "arguments" in forward_params:
+            forward_args = forward_params["arguments"].copy()
+            forward_args.pop("instance_id", None)
+            forward_params["arguments"] = forward_args
+
         # Route the request
-        return self._send_request(instance_info, method, params)
+        return self._send_request(instance_info, method, forward_params)
 
     def _verify_binary_path(self, instance_id: str, instance_info: dict) -> bool:
         """Verify instance binary path matches cached path.

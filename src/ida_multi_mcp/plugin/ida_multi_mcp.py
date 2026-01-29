@@ -97,13 +97,14 @@ class IdaMultiMcpPlugin(idaapi.plugin_t):
 
             # Get the actual port assigned by the OS
             if self.mcp_server._http_server:
-                self.server_port = self.mcp_server._http_server.server_port
+                self.server_port = self.mcp_server._http_server.server_address[1]
                 print(f"[ida-multi-mcp] Server listening on port {self.server_port}")
 
                 # Register with central registry
                 self.instance_id = register_instance(
                     pid=os.getpid(),
                     port=self.server_port,
+                    idb_path=metadata["idb_path"],
                     binary_path=metadata["binary_path"],
                     binary_name=metadata["binary_name"],
                     arch=metadata["arch"],
