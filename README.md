@@ -81,6 +81,32 @@ The guide covers:
 3. MCP client configuration (Claude Code, Claude Desktop, Cursor, Windsurf)
 4. Verification steps
 
+### Supported MCP Clients
+
+Works with any MCP-compatible client. Tested with:
+
+| Client | Type |
+|--------|------|
+| Claude Code | CLI |
+| Claude Desktop | Desktop |
+| Cursor | IDE |
+| VS Code (Copilot) | IDE |
+| Windsurf | IDE |
+| Zed | IDE |
+| Augment Code | IDE |
+| Cline | Extension |
+| Kilo Code | Extension |
+| Kiro | IDE |
+| LM Studio | Desktop |
+| Opencode | CLI |
+| Qodo Gen | Extension |
+| Roo Code | Extension |
+| Trae | IDE |
+| Warp | Terminal |
+| Amazon Q Developer CLI | CLI |
+| Copilot CLI | CLI |
+| Gemini CLI | CLI |
+
 ### MCP Client Configuration
 
 After installation, add this to your MCP client config:
@@ -113,6 +139,8 @@ claude mcp add ida-multi-mcp -s user -- ida-multi-mcp serve
   }
 }
 ```
+
+For other clients, run `ida-multi-mcp config` to get the JSON configuration.
 
 ## Usage
 

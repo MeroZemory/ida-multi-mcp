@@ -50,7 +50,7 @@ Add the following to the user's MCP client configuration:
 
 Run this command:
 ```bash
-claude mcp add ida-multi-mcp -- ida-multi-mcp serve
+claude mcp add ida-multi-mcp -s user -- ida-multi-mcp serve
 ```
 
 Or add to `.claude/config.json`:

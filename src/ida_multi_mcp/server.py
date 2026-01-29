@@ -12,6 +12,7 @@ from .registry import InstanceRegistry
 from .router import InstanceRouter
 from .health import cleanup_stale_instances
 from .tools import management
+from .cache import get_cache, DEFAULT_MAX_OUTPUT_CHARS
 
 
 class IdaMultiMcpServer:
@@ -94,8 +95,30 @@ class IdaMultiMcpServer:
                     "isError": False
                 }
 
+            elif name == "get_cached_output":
+                cache = get_cache()
+                cache_id = arguments.get("cache_id", "")
+                offset = arguments.get("offset", 0)
+                size = arguments.get("size", DEFAULT_MAX_OUTPUT_CHARS)
+
+                try:
+                    result = cache.get(cache_id, offset, size)
+                    return {
+                        "content": [{"type": "text", "text": result["chunk"]}],
+                        "structuredContent": result,
+                        "isError": False
+                    }
+                except KeyError as e:
+                    return {
+                        "content": [{"type": "text", "text": f"Error: {str(e)}"}],
+                        "isError": True
+                    }
+
             # IDA tools (proxied)
             else:
+                # Extract max_output_chars if provided (0 = unlimited)
+                max_output = arguments.pop("max_output_chars", DEFAULT_MAX_OUTPUT_CHARS)
+
                 result = self.router.route_request("tools/call", {
                     "name": name,
                     "arguments": arguments
@@ -107,9 +130,46 @@ class IdaMultiMcpServer:
                         "content": [{"type": "text", "text": f"Error: {json.dumps(result, indent=2)}"}],
                         "isError": True
                     }
+
+                # Serialize result
+                result_text = json.dumps(result, indent=2)
+                total_chars = len(result_text)
+
+                # Check if truncation needed (max_output=0 means unlimited)
+                if max_output > 0 and total_chars > max_output:
+                    # Cache full response
+                    cache = get_cache()
+                    instance_id = arguments.get("instance_id") or self.registry.get_active()
+                    cache_id = cache.store(result_text, tool_name=name, instance_id=instance_id)
+
+                    # Truncate for return
+                    truncated_text = result_text[:max_output]
+
+                    # Add truncation notice to text output
+                    truncation_notice = (
+                        f"\n\n--- TRUNCATED ---\n"
+                        f"Showing {max_output:,} of {total_chars:,} chars ({total_chars - max_output:,} remaining)\n"
+                        f"cache_id: {cache_id}\n"
+                        f"To get more: get_cached_output(cache_id='{cache_id}', offset={max_output})"
+                    )
+
+                    return {
+                        "content": [{"type": "text", "text": truncated_text + truncation_notice}],
+                        "structuredContent": {
+                            "result": result,
+                            "_truncated": {
+                                "cache_id": cache_id,
+                                "total_chars": total_chars,
+                                "returned_chars": max_output,
+                                "remaining_chars": total_chars - max_output,
+                                "hint": f"Use get_cached_output(cache_id='{cache_id}', offset={max_output}) to get more"
+                            }
+                        },
+                        "isError": False
+                    }
                 else:
                     return {
-                        "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                        "content": [{"type": "text", "text": result_text}],
                         "isError": False
                     }
 
@@ -166,6 +226,29 @@ class IdaMultiMcpServer:
                 "type": "object",
                 "properties": {},
                 "required": []
+            }
+        }
+
+        self._tool_cache["get_cached_output"] = {
+            "name": "get_cached_output",
+            "description": "Retrieve cached output from a previous tool call that was truncated. Use this to get additional chunks of large responses.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "cache_id": {
+                        "type": "string",
+                        "description": "Cache ID from the _truncated metadata of a previous response"
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Starting character position (default: 0)"
+                    },
+                    "size": {
+                        "type": "integer",
+                        "description": "Number of characters to return (default: 20000, 0 = all remaining)"
+                    }
+                },
+                "required": ["cache_id"]
             }
         }
 
