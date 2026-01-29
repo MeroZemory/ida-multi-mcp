@@ -104,12 +104,13 @@ def cmd_install(args):
     loader_source = Path(__file__).parent / "plugin" / "ida_multi_mcp_loader.py"
     loader_dest = ida_plugins_dir / "ida_multi_mcp.py"
 
-    # Remove existing original ida_mcp.py if present (our plugin replaces it)
+    # Coexistence: ida_mcp.py (original) and ida_multi_mcp.py (ours) can both exist
     old_plugin = ida_plugins_dir / "ida_mcp.py"
     if old_plugin.exists():
-        print(f"\n  Found existing ida_mcp.py (original ida-pro-mcp plugin)")
-        print(f"  Renaming to ida_mcp.py.bak (ida-multi-mcp replaces it)")
-        old_plugin.rename(ida_plugins_dir / "ida_mcp.py.bak")
+        print(f"\n  Note: Found existing ida_mcp.py (original ida-pro-mcp plugin)")
+        print(f"  Both plugins can coexist. To avoid conflicts, disable one:")
+        print(f"  - Remove ida_mcp.py to use only ida-multi-mcp")
+        print(f"  - Or keep both (they will bind to different ports)")
 
     # Try symlink first (development-friendly), fall back to copy
     if loader_dest.exists() or loader_dest.is_symlink():
@@ -166,12 +167,6 @@ def cmd_uninstall(args):
         print(f"  Removed plugin: {loader_dest}")
     else:
         print(f"  Plugin not found at {loader_dest}")
-
-    # Restore original ida_mcp.py if backed up
-    backup = ida_plugins_dir / "ida_mcp.py.bak"
-    if backup.exists():
-        backup.rename(ida_plugins_dir / "ida_mcp.py")
-        print("  Restored original ida_mcp.py from backup")
 
     # Clean up registry
     registry_dir = Path.home() / ".ida-mcp"
