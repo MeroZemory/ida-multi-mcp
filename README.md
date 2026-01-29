@@ -64,7 +64,7 @@ pip install ida-pro-mcp && ida-pro-mcp --install
 ida-multi-mcp install
 
 # 4. Add MCP server to your client (Claude Code example)
-claude mcp add ida-multi-mcp -- ida-multi-mcp serve
+claude mcp add ida-multi-mcp -s user -- ida-multi-mcp serve
 ```
 
 ### For AI Agents
@@ -87,7 +87,7 @@ After installation, add this to your MCP client config:
 
 **Claude Code** (recommended):
 ```bash
-claude mcp add ida-multi-mcp -- ida-multi-mcp serve
+claude mcp add ida-multi-mcp -s user -- ida-multi-mcp serve
 ```
 
 **Claude Desktop** (`claude_desktop_config.json`):
@@ -377,9 +377,15 @@ Contributions welcome! Please ensure:
 - Clean, readable code
 - Tests for new features
 
+## Acknowledgments
+
+This project was inspired by and builds upon [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) by [Duncan Ogilvie (mrexodia)](https://github.com/mrexodia), which provides the single-instance IDA Pro MCP plugin that each IDA instance runs. ida-multi-mcp adds multi-instance orchestration on top of it.
+
+The installation approach (AI-agent-friendly installation guides) was influenced by [oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode) by [Yeongyu Yun (code-yeongyu)](https://github.com/code-yeongyu).
+
 ## Related Projects
 
-- **ida-pro-mcp** — The underlying IDA plugin providing 71+ tools
+- **[ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp)** — The underlying IDA plugin providing 71+ tools (MIT License)
 - **Claude Code** — MCP client with native support
 - **Cursor** — Alternative MCP-enabled editor
 
