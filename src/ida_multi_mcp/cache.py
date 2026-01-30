@@ -12,7 +12,7 @@ from typing import Any
 
 
 # Configuration
-DEFAULT_MAX_OUTPUT_CHARS = 20000  # Default truncation limit
+DEFAULT_MAX_OUTPUT_CHARS = 10000  # Default truncation limit
 CACHE_MAX_ENTRIES = 200          # Maximum cached responses
 CACHE_TTL_SECONDS = 600          # 10 minutes
 
