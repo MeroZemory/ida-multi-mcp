@@ -207,13 +207,22 @@ class IdaMultiMcpServer:
             if "error" in list_result:
                 return {"error": f"Failed to list functions: {list_result['error']}"}
 
-            # list_funcs returns: [{"data": [{"addr": ..., "name": ...}, ...], "next_offset": N}]
+            # Router returns MCP content wrapper: {"content": [{"type":"text","text":"[...]"}]}
+            # Parse the JSON string from content[0].text
             addrs = []
-            if isinstance(list_result, list):
-                for page in list_result:
-                    for f in page.get("data", []):
-                        if "addr" in f:
-                            addrs.append(f["addr"])
+            try:
+                content = list_result.get("content", [])
+                if content:
+                    raw = json.loads(content[0]["text"])
+                    # list_funcs returns: [{"data": [{"addr":..., "name":...}, ...], "next_offset": N}]
+                    if isinstance(raw, list):
+                        for page in raw:
+                            for f in page.get("data", []):
+                                if "addr" in f:
+                                    addrs.append(f["addr"])
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                return {"error": "Failed to parse list_funcs response"}
+
             if not addrs:
                 return {"error": "No functions found in binary"}
 
@@ -228,17 +237,29 @@ class IdaMultiMcpServer:
         failed_addrs = []
         files_written = []
 
+        def _call_decompile(addr: str) -> dict:
+            """Call decompile and parse MCP content wrapper."""
+            raw = self.router.route_request("tools/call", {
+                "name": "decompile",
+                "arguments": {
+                    "addr": addr,
+                    **({"instance_id": instance_id} if instance_id else {})
+                }
+            })
+            # Router returns {"content": [{"text": "{\"addr\":...,\"code\":...}"}]}
+            try:
+                content = raw.get("content", [])
+                if content:
+                    return json.loads(content[0]["text"])
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                pass
+            return raw
+
         if mode == "merged":
             merged_path = os.path.join(output_dir, "decompiled.c")
             with open(merged_path, "w", encoding="utf-8") as f:
                 for addr in addrs:
-                    decomp = self.router.route_request("tools/call", {
-                        "name": "decompile",
-                        "arguments": {
-                            "addr": addr,
-                            **({"instance_id": instance_id} if instance_id else {})
-                        }
-                    })
+                    decomp = _call_decompile(addr)
                     code = decomp.get("code")
                     if code:
                         name = decomp.get("name", addr)
@@ -253,13 +274,7 @@ class IdaMultiMcpServer:
         else:
             # single mode: one file per function
             for addr in addrs:
-                decomp = self.router.route_request("tools/call", {
-                    "name": "decompile",
-                    "arguments": {
-                        "addr": addr,
-                        **({"instance_id": instance_id} if instance_id else {})
-                    }
-                })
+                decomp = _call_decompile(addr)
                 code = decomp.get("code")
                 if code:
                     name = decomp.get("name", addr)
