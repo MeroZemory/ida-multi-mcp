@@ -189,13 +189,54 @@ class IdaMultiMcpServer:
 
         Orchestrates list_funcs + decompile calls via IDA, writes to disk locally.
         """
+        decompile_all = arguments.get("all", False)
         addrs = arguments.get("addrs", [])
         output_dir = arguments.get("output_dir", ".")
         mode = arguments.get("mode", "single")
         instance_id = arguments.get("instance_id")
 
+        # Fetch all function addresses via paginated list_funcs calls
+        if decompile_all:
+            addrs = []
+            offset = 0
+            page_size = 500
+            while True:
+                list_result = self.router.route_request("tools/call", {
+                    "name": "list_funcs",
+                    "arguments": {
+                        "queries": json.dumps({"count": page_size, "offset": offset}),
+                        **({"instance_id": instance_id} if instance_id else {})
+                    }
+                })
+                if "error" in list_result:
+                    return {"error": f"Failed to list functions: {list_result['error']}"}
+
+                try:
+                    content = list_result.get("content", [])
+                    if not content:
+                        break
+                    raw = json.loads(content[0]["text"])
+                    if not isinstance(raw, list) or not raw:
+                        break
+                    page_data = raw[0].get("data", [])
+                    if not page_data:
+                        break
+                    for f in page_data:
+                        if "addr" in f:
+                            addrs.append(f["addr"])
+                    # Check if there are more pages
+                    next_offset = raw[0].get("next_offset")
+                    if next_offset is None or len(page_data) < page_size:
+                        break
+                    offset = next_offset
+                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                    return {"error": "Failed to parse list_funcs response"}
+
+            if not addrs:
+                return {"error": "No functions found in binary"}
+
         if not addrs:
-            return {"error": "No addresses provided. Pass 'addrs' array with function addresses."}
+            return {"error": "No addresses provided. Pass 'addrs' array or set 'all' to true."}
 
         # Ensure output directory exists
         os.makedirs(output_dir, exist_ok=True)
@@ -356,7 +397,11 @@ class IdaMultiMcpServer:
                     "addrs": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Function addresses to decompile (e.g. ['0x1800011A0', '0x180004B20'])"
+                        "description": "Function addresses to decompile (e.g. ['0x1800011A0', '0x180004B20']). Required unless 'all' is true."
+                    },
+                    "all": {
+                        "type": "boolean",
+                        "description": "Decompile all functions in the binary (default: false). Uses paginated queries to avoid blocking IDA. When true, 'addrs' is ignored."
                     },
                     "output_dir": {
                         "type": "string",
@@ -371,7 +416,7 @@ class IdaMultiMcpServer:
                         "description": "Target IDA instance ID (defaults to active instance)"
                     }
                 },
-                "required": ["addrs", "output_dir"]
+                "required": ["output_dir"]
             }
         }
 
