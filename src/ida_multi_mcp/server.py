@@ -3,6 +3,8 @@
 Aggregates tools from multiple IDA instances and routes requests.
 """
 
+import os
+import re
 import sys
 import json
 from typing import Any
@@ -114,6 +116,13 @@ class IdaMultiMcpServer:
                         "isError": True
                     }
 
+            elif name == "decompile_to_file":
+                result = self._handle_decompile_to_file(arguments)
+                return {
+                    "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                    "isError": "error" in result
+                }
+
             # IDA tools (proxied)
             else:
                 # Extract max_output_chars if provided (0 = unlimited)
@@ -174,6 +183,104 @@ class IdaMultiMcpServer:
                     }
 
         self.server.registry.methods["tools/call"] = custom_tools_call
+
+    def _handle_decompile_to_file(self, arguments: dict) -> dict:
+        """Decompile functions and save results to local files.
+
+        Orchestrates list_funcs + decompile calls via IDA, writes to disk locally.
+        """
+        decompile_all = arguments.get("all", False)
+        addrs = arguments.get("addrs", [])
+        output_dir = arguments.get("output_dir", ".")
+        mode = arguments.get("mode", "single")
+        instance_id = arguments.get("instance_id")
+
+        # Resolve all functions from IDA
+        if decompile_all:
+            list_result = self.router.route_request("tools/call", {
+                "name": "list_funcs",
+                "arguments": {
+                    "queries": json.dumps({"count": 0}),
+                    **({"instance_id": instance_id} if instance_id else {})
+                }
+            })
+            if "error" in list_result:
+                return {"error": f"Failed to list functions: {list_result['error']}"}
+
+            funcs = list_result.get("functions", [])
+            addrs = [f["addr"] for f in funcs if "addr" in f]
+            if not addrs:
+                return {"error": "No functions found in binary"}
+
+        if not addrs:
+            return {"error": "No addresses provided. Pass 'addrs' array or set 'all' to true."}
+
+        # Ensure output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+
+        success = 0
+        failed = 0
+        failed_addrs = []
+        files_written = []
+
+        if mode == "merged":
+            merged_path = os.path.join(output_dir, "decompiled.c")
+            with open(merged_path, "w", encoding="utf-8") as f:
+                for addr in addrs:
+                    decomp = self.router.route_request("tools/call", {
+                        "name": "decompile",
+                        "arguments": {
+                            "addr": addr,
+                            **({"instance_id": instance_id} if instance_id else {})
+                        }
+                    })
+                    code = decomp.get("code")
+                    if code:
+                        name = decomp.get("name", addr)
+                        f.write(f"// {name} @ {addr}\n")
+                        f.write(code)
+                        f.write("\n\n")
+                        success += 1
+                    else:
+                        failed += 1
+                        failed_addrs.append(addr)
+            files_written.append("decompiled.c")
+        else:
+            # single mode: one file per function
+            for addr in addrs:
+                decomp = self.router.route_request("tools/call", {
+                    "name": "decompile",
+                    "arguments": {
+                        "addr": addr,
+                        **({"instance_id": instance_id} if instance_id else {})
+                    }
+                })
+                code = decomp.get("code")
+                if code:
+                    name = decomp.get("name", addr)
+                    safe_name = re.sub(r'[<>:"/\\|?*]', "_", name)
+                    filename = f"{safe_name}.c"
+                    filepath = os.path.join(output_dir, filename)
+                    with open(filepath, "w", encoding="utf-8") as f:
+                        f.write(f"// {name} @ {addr}\n")
+                        f.write(code)
+                        f.write("\n")
+                    files_written.append(filename)
+                    success += 1
+                else:
+                    failed += 1
+                    failed_addrs.append(addr)
+
+        return {
+            "output_dir": output_dir,
+            "mode": mode,
+            "total": len(addrs),
+            "success": success,
+            "failed": failed,
+            "failed_addrs": failed_addrs[:50],
+            "files": files_written[:50],
+            "files_total": len(files_written),
+        }
 
     def _refresh_tools(self) -> int:
         """Refresh tool cache from IDA instances.
@@ -249,6 +356,38 @@ class IdaMultiMcpServer:
                     }
                 },
                 "required": ["cache_id"]
+            }
+        }
+
+        self._tool_cache["decompile_to_file"] = {
+            "name": "decompile_to_file",
+            "description": "Decompile functions and save results directly to files on disk.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "addrs": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Function addresses to decompile (e.g. ['0x1800011A0', '0x180004B20']). Required unless 'all' is true."
+                    },
+                    "all": {
+                        "type": "boolean",
+                        "description": "Decompile all functions in the binary (default: false). When true, 'addrs' is ignored."
+                    },
+                    "output_dir": {
+                        "type": "string",
+                        "description": "Directory to save decompiled files"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "description": "Output mode: 'single' = one .c file per function (default), 'merged' = all in one file"
+                    },
+                    "instance_id": {
+                        "type": "string",
+                        "description": "Target IDA instance ID (defaults to active instance)"
+                    }
+                },
+                "required": ["output_dir"]
             }
         }
 
