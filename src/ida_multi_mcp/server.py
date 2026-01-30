@@ -207,8 +207,13 @@ class IdaMultiMcpServer:
             if "error" in list_result:
                 return {"error": f"Failed to list functions: {list_result['error']}"}
 
-            funcs = list_result.get("functions", [])
-            addrs = [f["addr"] for f in funcs if "addr" in f]
+            # list_funcs returns: [{"data": [{"addr": ..., "name": ...}, ...], "next_offset": N}]
+            addrs = []
+            if isinstance(list_result, list):
+                for page in list_result:
+                    for f in page.get("data", []):
+                        if "addr" in f:
+                            addrs.append(f["addr"])
             if not addrs:
                 return {"error": "No functions found in binary"}
 
@@ -411,6 +416,26 @@ class IdaMultiMcpServer:
 
                     input_schema["properties"] = properties
                     tool_schema["inputSchema"] = input_schema
+
+                    # Append warnings to specific tool descriptions
+                    _SINGLE_THREAD_WARNING = (
+                        " WARNING: IDA executes on a single main thread. "
+                        "Long-running operations will block ALL subsequent requests and make IDA unresponsive."
+                    )
+                    if tool["name"] == "py_eval":
+                        tool_schema["description"] = (
+                            tool_schema.get("description", "") +
+                            _SINGLE_THREAD_WARNING +
+                            " Do NOT iterate all functions, bulk decompile, or run heavy loops. "
+                            "Use decompile_to_file for batch decompilation instead."
+                        )
+                    elif tool["name"] == "list_funcs":
+                        tool_schema["description"] = (
+                            tool_schema.get("description", "") +
+                            _SINGLE_THREAD_WARNING +
+                            " For large binaries (100K+ functions), use count/offset pagination. "
+                            "Avoid count=0 (all) with glob filters on large binaries."
+                        )
 
                     self._tool_cache[tool["name"]] = tool_schema
 
