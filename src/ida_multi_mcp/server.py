@@ -195,6 +195,9 @@ class IdaMultiMcpServer:
         mode = arguments.get("mode", "single")
         instance_id = arguments.get("instance_id")
 
+        # addr → name mapping (populated by list_funcs when using 'all')
+        addr_names: dict[str, str] = {}
+
         # Fetch all function addresses via paginated list_funcs calls
         if decompile_all:
             addrs = []
@@ -224,6 +227,8 @@ class IdaMultiMcpServer:
                     for f in page_data:
                         if "addr" in f:
                             addrs.append(f["addr"])
+                            if "name" in f:
+                                addr_names[f["addr"]] = f["name"]
                     # Check if there are more pages
                     next_offset = raw[0].get("next_offset")
                     if next_offset is None or len(page_data) < page_size:
@@ -271,7 +276,7 @@ class IdaMultiMcpServer:
                     decomp = _call_decompile(addr)
                     code = decomp.get("code")
                     if code:
-                        name = decomp.get("name", addr)
+                        name = addr_names.get(addr) or decomp.get("name") or addr
                         f.write(f"// {name} @ {addr}\n")
                         f.write(code)
                         f.write("\n\n")
@@ -286,7 +291,7 @@ class IdaMultiMcpServer:
                 decomp = _call_decompile(addr)
                 code = decomp.get("code")
                 if code:
-                    name = decomp.get("name", addr)
+                    name = addr_names.get(addr) or decomp.get("name") or addr
                     safe_name = re.sub(r'[<>:"/\\|?*]', "_", name)
                     filename = f"{safe_name}.c"
                     filepath = os.path.join(output_dir, filename)
@@ -423,6 +428,11 @@ class IdaMultiMcpServer:
             }
         }
 
+        _SINGLE_THREAD_WARNING = (
+            " WARNING: IDA executes on a single main thread. "
+            "Long-running operations will block ALL subsequent requests and make IDA unresponsive."
+        )
+
         # Discover IDA tools from active instance
         active_id = self.registry.get_active()
         if active_id:
@@ -445,10 +455,6 @@ class IdaMultiMcpServer:
                     tool_schema["inputSchema"] = input_schema
 
                     # Append warnings to specific tool descriptions
-                    _SINGLE_THREAD_WARNING = (
-                        " WARNING: IDA executes on a single main thread. "
-                        "Long-running operations will block ALL subsequent requests and make IDA unresponsive."
-                    )
                     if tool["name"] == "py_eval":
                         tool_schema["description"] = (
                             tool_schema.get("description", "") +
