@@ -390,7 +390,10 @@ class IdaMultiMcpServer:
 
         self._tool_cache["decompile_to_file"] = {
             "name": "decompile_to_file",
-            "description": "Decompile functions and save results directly to files on disk.",
+            "description": "Decompile functions and save results directly to files on disk. "
+                "IMPORTANT: Each function requires a separate IDA decompile call. "
+                "For large binaries, check function count with list_funcs first before using 'all'. "
+                "Hundreds of functions can take minutes; thousands can take much longer.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
