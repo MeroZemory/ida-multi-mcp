@@ -12,7 +12,7 @@ from typing import Any
 from .vendor.zeromcp import McpServer
 from .registry import InstanceRegistry
 from .router import InstanceRouter
-from .health import cleanup_stale_instances
+from .health import cleanup_stale_instances, rediscover_instances
 from .tools import management
 from .cache import get_cache, DEFAULT_MAX_OUTPUT_CHARS
 
@@ -433,8 +433,15 @@ class IdaMultiMcpServer:
             "Long-running operations will block ALL subsequent requests and make IDA unresponsive."
         )
 
-        # Discover IDA tools from active instance
+        # Discover IDA tools from active instance (rediscover if needed)
         active_id = self.registry.get_active()
+        if not active_id:
+            # Try auto-discovery in case IDA started after the proxy
+            discovered = rediscover_instances(self.registry)
+            if discovered:
+                print(f"[ida-multi-mcp] Auto-discovered {len(discovered)} IDA instance(s) during refresh",
+                      file=sys.stderr)
+                active_id = self.registry.get_active()
         if active_id:
             instance_info = self.registry.get_instance(active_id)
             if instance_info:
@@ -513,11 +520,21 @@ class IdaMultiMcpServer:
 
     def run(self):
         """Run the MCP server with stdio transport."""
-        # Clean up stale instances on startup
+        # Clean up dead instances on startup
         removed = cleanup_stale_instances(self.registry)
         if removed:
-            print(f"[ida-multi-mcp] Cleaned up {len(removed)} stale instances on startup",
+            print(f"[ida-multi-mcp] Cleaned up {len(removed)} dead instances on startup",
                   file=sys.stderr)
+
+        # Auto-discover IDA instances if registry is empty
+        if not self.registry.list_instances():
+            discovered = rediscover_instances(self.registry)
+            if discovered:
+                print(f"[ida-multi-mcp] Auto-discovered {len(discovered)} IDA instance(s)",
+                      file=sys.stderr)
+            else:
+                print("[ida-multi-mcp] No IDA instances found (start IDA with MCP plugin first)",
+                      file=sys.stderr)
 
         # Refresh tools
         self._refresh_tools()

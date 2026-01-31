@@ -134,7 +134,7 @@ class InstanceRouter:
         port = instance_info.get("port")
 
         try:
-            conn = http.client.HTTPConnection(host, port, timeout=30.0)
+            conn = http.client.HTTPConnection(host, port, timeout=300.0)
             request_body = json.dumps({
                 "jsonrpc": "2.0",
                 "method": method,
