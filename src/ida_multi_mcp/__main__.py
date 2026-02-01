@@ -1,6 +1,6 @@
 """CLI entry point for ida-multi-mcp.
 
-Provides commands for running the server, listing instances, and managing installation.
+Provides flags for running the server, listing instances, and managing installation.
 """
 
 import os
@@ -12,11 +12,6 @@ import shutil
 
 from .server import serve
 from .registry import InstanceRegistry
-
-
-def cmd_serve(args):
-    """Start the MCP server."""
-    serve(registry_path=args.registry)
 
 
 def cmd_list(args):
@@ -107,8 +102,7 @@ def cmd_install(args):
     mcp_config = {
         "mcpServers": {
             "ida-multi-mcp": {
-                "command": "ida-multi-mcp",
-                "args": ["serve"]
+                "command": "ida-multi-mcp"
             }
         }
     }
@@ -121,15 +115,15 @@ def cmd_install(args):
 
     print("\nConfig file locations:")
     print("  Claude Desktop: claude_desktop_config.json")
-    print("  Claude Code:    .claude/config.json (mcp_servers key)")
+    print("  Claude Code:    claude mcp add ida-multi-mcp -s user -- ida-multi-mcp")
     print("  Cursor:         .cursor/mcp.json")
     print("  Windsurf:       .codeium/windsurf/mcp_config.json")
 
     print("\n" + "=" * 60)
     print("\nNext steps:")
     print("  1. Add the MCP config above to your client")
-    print("  2. Open IDA Pro -the plugin auto-loads (PLUGIN_FIX)")
-    print("  3. Run 'ida-multi-mcp list' to verify instances")
+    print("  2. Open IDA Pro - the plugin auto-loads (PLUGIN_FIX)")
+    print("  3. Run 'ida-multi-mcp --list' to verify instances")
     print("=" * 60)
 
 
@@ -161,8 +155,7 @@ def cmd_config(args):
     config = {
         "mcpServers": {
             "ida-multi-mcp": {
-                "command": "ida-multi-mcp",
-                "args": ["serve"]
+                "command": "ida-multi-mcp"
             }
         }
     }
@@ -172,6 +165,8 @@ def cmd_config(args):
     print("\nAdd this to your MCP client configuration file:")
     print("\nClaude Desktop (claude_desktop_config.json):")
     print(json.dumps(config, indent=2))
+    print("\nClaude Code:")
+    print("  claude mcp add ida-multi-mcp -s user -- ida-multi-mcp")
     print("\nCursor (.cursor/mcp.json):")
     print(json.dumps(config, indent=2))
     print("\nWindsurf (.codeium/windsurf/mcp_config.json):")
@@ -183,53 +178,44 @@ def main():
     parser = argparse.ArgumentParser(
         description="ida-multi-mcp: Multi-instance MCP server for IDA Pro"
     )
-
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
-
-    # serve command
-    serve_parser = subparsers.add_parser("serve", help="Start the MCP server")
-    serve_parser.add_argument(
-        "--registry",
+    parser.add_argument(
+        "--install", action="store_true",
+        help="Install the IDA plugin and show MCP client configuration"
+    )
+    parser.add_argument(
+        "--uninstall", action="store_true",
+        help="Uninstall the IDA plugin and clean up registry"
+    )
+    parser.add_argument(
+        "--list", action="store_true",
+        help="List all registered IDA instances"
+    )
+    parser.add_argument(
+        "--config", action="store_true",
+        help="Print MCP client configuration JSON"
+    )
+    parser.add_argument(
+        "--ida-dir", type=str, default=None,
+        help="Custom IDA Pro directory (for --install/--uninstall)"
+    )
+    parser.add_argument(
+        "--registry", type=str, default=None,
         help="Path to registry JSON file (default: ~/.ida-mcp/instances.json)"
     )
-    serve_parser.set_defaults(func=cmd_serve)
 
-    # list command
-    list_parser = subparsers.add_parser("list", help="List registered IDA instances")
-    list_parser.add_argument(
-        "--registry",
-        help="Path to registry JSON file (default: ~/.ida-mcp/instances.json)"
-    )
-    list_parser.set_defaults(func=cmd_list)
-
-    # install command
-    install_parser = subparsers.add_parser("install", help="Install IDA plugin and configure MCP clients")
-    install_parser.add_argument(
-        "--ida-dir",
-        help="Custom IDA Pro installation directory"
-    )
-    install_parser.set_defaults(func=cmd_install)
-
-    # uninstall command
-    uninstall_parser = subparsers.add_parser("uninstall", help="Uninstall IDA plugin")
-    uninstall_parser.add_argument(
-        "--ida-dir",
-        help="Custom IDA Pro installation directory"
-    )
-    uninstall_parser.set_defaults(func=cmd_uninstall)
-
-    # config command
-    config_parser = subparsers.add_parser("config", help="Print MCP client configuration JSON")
-    config_parser.set_defaults(func=cmd_config)
-
-    # Parse and execute
     args = parser.parse_args()
 
-    if not args.command:
-        parser.print_help()
-        return
-
-    args.func(args)
+    if args.install:
+        cmd_install(args)
+    elif args.uninstall:
+        cmd_uninstall(args)
+    elif args.list:
+        cmd_list(args)
+    elif args.config:
+        cmd_config(args)
+    else:
+        # Default: start MCP server
+        serve(registry_path=args.registry)
 
 
 if __name__ == "__main__":

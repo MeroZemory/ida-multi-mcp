@@ -783,22 +783,22 @@ def is_process_alive(pid: int) -> bool:
 
 ```bash
 # MCP 서버 시작 (stdio - 기본, MCP 클라이언트가 사용)
-ida-multi-mcp serve
+ida-multi-mcp
 
 # MCP 서버 시작 (HTTP)
-ida-multi-mcp serve --transport http://127.0.0.1:8744
+ida-multi-mcp --transport http://127.0.0.1:8744
 
 # 등록된 인스턴스 목록
-ida-multi-mcp list
+ida-multi-mcp --list
 
 # IDA 플러그인 + MCP 클라이언트 설치
-ida-multi-mcp install
+ida-multi-mcp --install
 
 # 제거
-ida-multi-mcp uninstall
+ida-multi-mcp --uninstall
 
 # MCP 클라이언트 설정 JSON 출력
-ida-multi-mcp config
+ida-multi-mcp --config
 ```
 
 ---
@@ -898,7 +898,7 @@ ida-multi-mcp config
 ```bash
 # 1. 설치 (1회)
 pip install ida-multi-mcp
-ida-multi-mcp install
+ida-multi-mcp --install
 
 # 2. IDA Pro 실행 (플러그인 자동 로드)
 #    → 콘솔: "[Multi-MCP] Registered as 'a3f' on port 49152"

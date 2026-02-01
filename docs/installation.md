@@ -14,23 +14,10 @@ This guide is for AI agents. Follow each step exactly.
 pip install git+https://github.com/MeroZemory/ida-multi-mcp.git
 ```
 
-## Step 2: Ensure ida_mcp is installed in IDA
-
-The `ida_mcp` package (from the ida-pro-mcp project) must be installed in your IDA plugins directory.
-It provides the 71+ IDA tools and 24 resources that ida-multi-mcp routes.
-
-If you haven't installed it yet, follow the ida-pro-mcp installation guide:
-```bash
-pip install ida-pro-mcp
-ida-pro-mcp --install
-```
-
-This places `ida_mcp.py` and the `ida_mcp/` package into IDA's plugins directory.
-
-## Step 3: Install IDA Plugin
+## Step 2: Install IDA Plugin
 
 ```bash
-ida-multi-mcp install
+ida-multi-mcp --install
 ```
 
 This copies `ida_multi_mcp.py` to the IDA plugins directory:
@@ -39,10 +26,10 @@ This copies `ida_multi_mcp.py` to the IDA plugins directory:
 
 If IDA is installed in a custom location:
 ```bash
-ida-multi-mcp install --ida-dir "C:/Program Files/IDA Pro 9.0"
+ida-multi-mcp --install --ida-dir "C:/Program Files/IDA Pro 9.0"
 ```
 
-## Step 4: Configure MCP Client
+## Step 3: Configure MCP Client
 
 Add the following to the user's MCP client configuration:
 
@@ -50,7 +37,7 @@ Add the following to the user's MCP client configuration:
 
 Run this command:
 ```bash
-claude mcp add ida-multi-mcp -s user -- ida-multi-mcp serve
+claude mcp add ida-multi-mcp -s user -- ida-multi-mcp
 ```
 
 Or add to `.claude/config.json`:
@@ -58,8 +45,7 @@ Or add to `.claude/config.json`:
 {
   "mcpServers": {
     "ida-multi-mcp": {
-      "command": "ida-multi-mcp",
-      "args": ["serve"]
+      "command": "ida-multi-mcp"
     }
   }
 }
@@ -72,8 +58,7 @@ Add to `claude_desktop_config.json`:
 {
   "mcpServers": {
     "ida-multi-mcp": {
-      "command": "ida-multi-mcp",
-      "args": ["serve"]
+      "command": "ida-multi-mcp"
     }
   }
 }
@@ -86,8 +71,7 @@ Add to `.cursor/mcp.json`:
 {
   "mcpServers": {
     "ida-multi-mcp": {
-      "command": "ida-multi-mcp",
-      "args": ["serve"]
+      "command": "ida-multi-mcp"
     }
   }
 }
@@ -100,30 +84,29 @@ Add to `.codeium/windsurf/mcp_config.json`:
 {
   "mcpServers": {
     "ida-multi-mcp": {
-      "command": "ida-multi-mcp",
-      "args": ["serve"]
+      "command": "ida-multi-mcp"
     }
   }
 }
 ```
 
-## Step 5: Verify
+## Step 4: Verify
 
 1. Open IDA Pro with any binary — the plugin auto-loads (PLUGIN_FIX)
 2. Check the IDA console for: `[ida-multi-mcp] Registered as instance 'xxxx'`
-3. Run: `ida-multi-mcp list` to confirm the instance is visible
+3. Run: `ida-multi-mcp --list` to confirm the instance is visible
 4. In your MCP client, try calling `list_instances()` tool
 
 ## Coexistence with ida-pro-mcp
 
-ida-multi-mcp coexists with the original ida-pro-mcp plugin (`ida_mcp.py`).
-Both can run simultaneously — they bind to different ports.
-To use only ida-multi-mcp, remove `ida_mcp.py` from the IDA plugins directory.
+If you previously used ida-pro-mcp, note that ida-multi-mcp now bundles all IDA tools internally.
+You can remove the original `ida_mcp.py` from the IDA plugins directory to avoid conflicts.
+Both can run simultaneously (they bind to different ports), but it's recommended to use only ida-multi-mcp.
 
 ## Uninstallation
 
 ```bash
-ida-multi-mcp uninstall
+ida-multi-mcp --uninstall
 pip uninstall ida-multi-mcp
 ```
 

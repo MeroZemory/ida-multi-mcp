@@ -36,7 +36,6 @@ MCP Client (Claude, Cursor, etc.)
 
 - Python 3.11 or later
 - IDA Pro 8.3+ (9.0 recommended)
-- `ida_mcp` package installed in IDA plugins directory (from [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp))
 
 ## Installation
 
@@ -56,15 +55,11 @@ Or install manually:
 # 1. Install ida-multi-mcp
 pip install git+https://github.com/MeroZemory/ida-multi-mcp.git
 
-# 2. Ensure ida_mcp is installed in IDA (from ida-pro-mcp project)
-#    Skip if you already have ida_mcp.py in your IDA plugins directory
-pip install ida-pro-mcp && ida-pro-mcp --install
+# 2. Install IDA plugin
+ida-multi-mcp --install
 
-# 3. Install IDA plugin
-ida-multi-mcp install
-
-# 4. Add MCP server to your client (Claude Code example)
-claude mcp add ida-multi-mcp -s user -- ida-multi-mcp serve
+# 3. Add MCP server to your client (Claude Code example)
+claude mcp add ida-multi-mcp -s user -- ida-multi-mcp
 ```
 
 ### For AI Agents
@@ -77,7 +72,7 @@ curl -s https://raw.githubusercontent.com/MeroZemory/ida-multi-mcp/main/docs/ins
 
 The guide covers:
 1. Package installation (`pip install`)
-2. IDA plugin setup (`ida-multi-mcp install`)
+2. IDA plugin setup (`ida-multi-mcp --install`)
 3. MCP client configuration (Claude Code, Claude Desktop, Cursor, Windsurf)
 4. Verification steps
 
@@ -113,7 +108,7 @@ After installation, add this to your MCP client config:
 
 **Claude Code** (recommended):
 ```bash
-claude mcp add ida-multi-mcp -s user -- ida-multi-mcp serve
+claude mcp add ida-multi-mcp -s user -- ida-multi-mcp
 ```
 
 **Claude Desktop** (`claude_desktop_config.json`):
@@ -121,8 +116,7 @@ claude mcp add ida-multi-mcp -s user -- ida-multi-mcp serve
 {
   "mcpServers": {
     "ida-multi-mcp": {
-      "command": "ida-multi-mcp",
-      "args": ["serve"]
+      "command": "ida-multi-mcp"
     }
   }
 }
@@ -133,14 +127,13 @@ claude mcp add ida-multi-mcp -s user -- ida-multi-mcp serve
 {
   "mcpServers": {
     "ida-multi-mcp": {
-      "command": "ida-multi-mcp",
-      "args": ["serve"]
+      "command": "ida-multi-mcp"
     }
   }
 }
 ```
 
-For other clients, run `ida-multi-mcp config` to get the JSON configuration.
+For other clients, run `ida-multi-mcp --config` to get the JSON configuration.
 
 ## Usage
 
@@ -158,7 +151,7 @@ For other clients, run `ida-multi-mcp config` to get the JSON configuration.
 ### Viewing Registered Instances
 
 ```bash
-ida-multi-mcp list
+ida-multi-mcp --list
 ```
 
 Output:
@@ -245,40 +238,40 @@ When you open a different binary in an IDA instance:
 
 ## CLI Commands
 
-### `ida-multi-mcp serve`
-Start the MCP server (stdio). Used by MCP clients.
+### `ida-multi-mcp`
+Start the MCP server (stdio). Used by MCP clients. This is the default command.
 
 ```bash
-ida-multi-mcp serve
+ida-multi-mcp
 ```
 
-### `ida-multi-mcp list`
+### `ida-multi-mcp --list`
 List all registered IDA instances.
 
 ```bash
-ida-multi-mcp list
+ida-multi-mcp --list
 ```
 
-### `ida-multi-mcp install [--ida-dir DIR]`
+### `ida-multi-mcp --install [--ida-dir DIR]`
 Install the IDA plugin and show MCP client configuration.
 
 ```bash
-ida-multi-mcp install
-ida-multi-mcp install --ida-dir "C:/Program Files/IDA Pro 9.0"
+ida-multi-mcp --install
+ida-multi-mcp --install --ida-dir "C:/Program Files/IDA Pro 9.0"
 ```
 
-### `ida-multi-mcp uninstall [--ida-dir DIR]`
+### `ida-multi-mcp --uninstall [--ida-dir DIR]`
 Remove the IDA plugin and clean up registry.
 
 ```bash
-ida-multi-mcp uninstall
+ida-multi-mcp --uninstall
 ```
 
-### `ida-multi-mcp config`
+### `ida-multi-mcp --config`
 Print the MCP client configuration JSON for easy reference.
 
 ```bash
-ida-multi-mcp config
+ida-multi-mcp --config
 ```
 
 ## Architecture
@@ -340,7 +333,7 @@ Make sure:
 
 The instance has crashed or expired. Run:
 ```bash
-ida-multi-mcp list
+ida-multi-mcp --list
 ```
 to see available instances, then use a valid ID.
 
@@ -353,14 +346,14 @@ You opened a different binary in that IDA instance. This is expected. Use the ne
 Check:
 1. IDA plugins directory exists: `%APPDATA%/Hex-Rays/IDA Pro/plugins/` (Windows)
 2. `ida_multi_mcp.py` is in the directory
-3. `ida-pro-mcp` package is installed: `pip list | grep ida-pro-mcp`
+3. `ida-multi-mcp` package is installed: `pip list | grep ida-multi-mcp`
 4. Restart IDA Pro
 
 ## Uninstallation
 
 ```bash
 # Remove plugin and registry
-ida-multi-mcp uninstall
+ida-multi-mcp --uninstall
 
 # Remove package
 pip uninstall ida-multi-mcp
@@ -407,13 +400,13 @@ Contributions welcome! Please ensure:
 
 ## Acknowledgments
 
-This project was inspired by and builds upon [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) by [Duncan Ogilvie (mrexodia)](https://github.com/mrexodia), which provides the single-instance IDA Pro MCP plugin that each IDA instance runs. ida-multi-mcp adds multi-instance orchestration on top of it.
+This project was inspired by and builds upon [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) by [Duncan Ogilvie (mrexodia)](https://github.com/mrexodia). The IDA tool implementations (71+ tools) originated from ida-pro-mcp and have been absorbed into ida-multi-mcp as a bundled package, adding multi-instance orchestration on top.
 
 The installation approach (AI-agent-friendly installation guides) was influenced by [oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode) by [Yeongyu Yun (code-yeongyu)](https://github.com/code-yeongyu).
 
 ## Related Projects
 
-- **[ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp)** — The underlying IDA plugin providing 71+ tools (MIT License)
+- **[ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp)** — The original single-instance IDA MCP plugin (tools originated from here) (MIT License)
 - **Claude Code** — MCP client with native support
 - **Cursor** — Alternative MCP-enabled editor
 
