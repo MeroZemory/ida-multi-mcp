@@ -1,4 +1,4 @@
-"""Memory reading and writing operations for IDA Pro MCP.
+"""Memory reading and writing operations for ida-multi-mcp.
 
 This module provides batch operations for reading and writing memory at various
 granularities (bytes, integers, strings) and patching binary data.

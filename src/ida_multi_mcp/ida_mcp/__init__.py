@@ -1,4 +1,4 @@
-"""IDA Pro MCP Plugin - Modular Package Version
+"""ida-multi-mcp IDA tools package
 
 This package provides MCP (Model Context Protocol) integration for IDA Pro,
 enabling AI assistants to interact with IDA's disassembler and decompiler.

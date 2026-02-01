@@ -1,4 +1,4 @@
-"""Debugger operations for IDA Pro MCP.
+"""Debugger operations for ida-multi-mcp.
 
 This module provides comprehensive debugging functionality including:
 - Debugger control (start, exit, continue, step, run_to)

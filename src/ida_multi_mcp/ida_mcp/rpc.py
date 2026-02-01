@@ -128,8 +128,11 @@ def _install_tools_call_patch() -> None:
     MCP_SERVER.registry.methods["tools/call"] = patched
 
 
-# Install the output limiting patch
-_install_tools_call_patch()
+# NOTE: IDA-side output truncation is disabled when running under ida-multi-mcp.
+# The proxy server (server.py) handles all truncation and caching for MCP clients.
+# IDA's download URLs (_download_url) are unreachable from stdio-connected clients,
+# and double truncation would cause the proxy to cache already-truncated previews.
+# _install_tools_call_patch()
 
 
 # ============================================================================

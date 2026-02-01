@@ -1,4 +1,4 @@
-"""IDA Pro MCP Test Framework
+"""ida-multi-mcp Test Framework
 
 This module provides a custom test framework for testing IDA MCP tools.
 Tests can be defined inline or in separate test files using the @test decorator.
@@ -451,7 +451,7 @@ def run_tests(
     # Print header
     if verbose:
         print("=" * 80)
-        print("IDA Pro MCP Test Runner")
+        print("ida-multi-mcp Test Runner")
         print("=" * 80)
         print()
 

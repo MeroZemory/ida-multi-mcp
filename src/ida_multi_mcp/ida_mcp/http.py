@@ -209,7 +209,7 @@ class IdaMcpHttpRequestHandler(McpHttpRequestHandler):
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IDA Pro MCP Config</title>
+  <title>ida-multi-mcp Config</title>
   <style>
 :root {
   --bg: #ffffff;
@@ -303,7 +303,7 @@ input[type="submit"]:hover {
   </script>
 </head>
 <body>
-<h1>IDA Pro MCP Config</h1>
+<h1>ida-multi-mcp Config</h1>
 
 <form method="post" action="/config">
 

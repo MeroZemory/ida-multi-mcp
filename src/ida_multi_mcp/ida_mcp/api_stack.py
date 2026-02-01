@@ -1,4 +1,4 @@
-"""Stack frame operations for IDA Pro MCP.
+"""Stack frame operations for ida-multi-mcp.
 
 This module provides batch operations for managing stack frame variables,
 including reading, creating, and deleting stack variables in functions.
