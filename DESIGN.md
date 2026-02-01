@@ -94,8 +94,8 @@ def dispatch_proxy(request):
 - `install_ida_plugin()`: IDA 플러그인 디렉토리에 symlink (우선) 또는 copy
   - Windows: `%APPDATA%/Hex-Rays/IDA Pro/plugins/`
   - Unix: `~/.idapro/plugins/`
-- `install_mcp_servers()`: 20+ MCP 클라이언트 설정 파일에 자동 등록
-  - Claude Desktop, Cursor, VS Code, Cline, Roo Code, Windsurf, Zed, LM Studio 등
+- `install_mcp_servers()`: 20+ MCP 클라이언트 설정 파일에 자동 등록 (`--install` 실행 시 자동 수행)
+  - Claude Code, Claude Desktop, Cursor, VS Code, Cline, Roo Code, Windsurf, Zed, LM Studio 등
   - JSON/TOML 파일 atomic write (temp file + `os.replace()`)
 
 #### 2.2.2 IDA Plugin (`ida_mcp.py`)
@@ -791,13 +791,13 @@ ida-multi-mcp --transport http://127.0.0.1:8744
 # 등록된 인스턴스 목록
 ida-multi-mcp --list
 
-# IDA 플러그인 + MCP 클라이언트 설치
+# IDA 플러그인 설치 + 모든 MCP 클라이언트 자동 설정
 ida-multi-mcp --install
 
-# 제거
+# 제거 (플러그인 + MCP 클라이언트 설정 + 레지스트리)
 ida-multi-mcp --uninstall
 
-# MCP 클라이언트 설정 JSON 출력
+# MCP 클라이언트 설정 JSON 출력 (참조용)
 ida-multi-mcp --config
 ```
 
@@ -839,8 +839,8 @@ ida-multi-mcp --config
 
 | Task | 설명 | 파일 |
 |------|------|------|
-| 4.1 | MCP 클라이언트 자동 설치 (20+ 클라이언트) | `__main__.py` |
-| 4.2 | IDA 플러그인 설치 (symlink/copy) | `__main__.py` |
+| 4.1 | MCP 클라이언트 자동 설치 (20+ 클라이언트, `--install`로 통합 실행) | `__main__.py` |
+| 4.2 | IDA 플러그인 설치 (symlink/copy, `--install`로 통합 실행) | `__main__.py` |
 | 4.3 | README.md (설치, 사용법, 아키텍처) | `README.md` |
 
 ---
@@ -896,13 +896,13 @@ ida-multi-mcp --config
 ### 7.2 일반적인 사용
 
 ```bash
-# 1. 설치 (1회)
+# 1. 설치 (1회) - 플러그인 설치 + 모든 MCP 클라이언트 자동 설정
 pip install ida-multi-mcp
 ida-multi-mcp --install
 
 # 2. IDA Pro 실행 (플러그인 자동 로드)
 #    → 콘솔: "[Multi-MCP] Registered as 'a3f' on port 49152"
 
-# 3. MCP 클라이언트에서 사용 (설정 자동 완료)
+# 3. MCP 클라이언트에서 사용 (설정 자동 완료, 수동 설정 불필요)
 #    Claude/Cursor에서 바로 IDA tool 사용 가능
 ```

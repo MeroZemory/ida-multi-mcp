@@ -55,11 +55,8 @@ Or install manually:
 # 1. Install ida-multi-mcp
 pip install git+https://github.com/MeroZemory/ida-multi-mcp.git
 
-# 2. Install IDA plugin
+# 2. Install IDA plugin + configure all MCP clients
 ida-multi-mcp --install
-
-# 3. Add MCP server to your client (Claude Code example)
-claude mcp add ida-multi-mcp -s user -- ida-multi-mcp
 ```
 
 ### For AI Agents
@@ -72,9 +69,8 @@ curl -s https://raw.githubusercontent.com/MeroZemory/ida-multi-mcp/main/docs/ins
 
 The guide covers:
 1. Package installation (`pip install`)
-2. IDA plugin setup (`ida-multi-mcp --install`)
-3. MCP client configuration (Claude Code, Claude Desktop, Cursor, Windsurf)
-4. Verification steps
+2. IDA plugin setup + MCP client auto-configuration (`ida-multi-mcp --install`)
+3. Verification steps
 
 ### Supported MCP Clients
 
@@ -104,36 +100,13 @@ Works with any MCP-compatible client. Tested with:
 
 ### MCP Client Configuration
 
-After installation, add this to your MCP client config:
+`ida-multi-mcp --install` automatically configures all detected MCP clients:
+- Claude Code, Claude Desktop, Cursor, Windsurf, VS Code, Zed, and 20+ more
 
-**Claude Code** (recommended):
+For clients not auto-detected or to view the configuration JSON, run:
 ```bash
-claude mcp add ida-multi-mcp -s user -- ida-multi-mcp
+ida-multi-mcp --config
 ```
-
-**Claude Desktop** (`claude_desktop_config.json`):
-```json
-{
-  "mcpServers": {
-    "ida-multi-mcp": {
-      "command": "ida-multi-mcp"
-    }
-  }
-}
-```
-
-**Cursor** (`.cursor/mcp.json`) / **Windsurf** (`.codeium/windsurf/mcp_config.json`):
-```json
-{
-  "mcpServers": {
-    "ida-multi-mcp": {
-      "command": "ida-multi-mcp"
-    }
-  }
-}
-```
-
-For other clients, run `ida-multi-mcp --config` to get the JSON configuration.
 
 ## Usage
 
@@ -253,7 +226,7 @@ ida-multi-mcp --list
 ```
 
 ### `ida-multi-mcp --install [--ida-dir DIR]`
-Install the IDA plugin and show MCP client configuration.
+Install the IDA plugin and auto-configure all detected MCP clients (Claude Code, Claude Desktop, Cursor, Windsurf, VS Code, Zed, and 20+ more).
 
 ```bash
 ida-multi-mcp --install
@@ -261,7 +234,7 @@ ida-multi-mcp --install --ida-dir "C:/Program Files/IDA Pro 9.0"
 ```
 
 ### `ida-multi-mcp --uninstall [--ida-dir DIR]`
-Remove the IDA plugin and clean up registry.
+Remove the IDA plugin, clean up registry, and remove MCP client configurations.
 
 ```bash
 ida-multi-mcp --uninstall
@@ -352,14 +325,11 @@ Check:
 ## Uninstallation
 
 ```bash
-# Remove plugin and registry
+# Remove plugin, registry, and MCP client configurations
 ida-multi-mcp --uninstall
 
 # Remove package
 pip uninstall ida-multi-mcp
-
-# Remove MCP client configuration
-# (Manual step — remove from claude_desktop_config.json, .cursor/mcp.json, etc.)
 ```
 
 ## Design Decisions

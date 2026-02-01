@@ -14,83 +14,29 @@ This guide is for AI agents. Follow each step exactly.
 pip install git+https://github.com/MeroZemory/ida-multi-mcp.git
 ```
 
-## Step 2: Install IDA Plugin
+## Step 2: Install IDA Plugin and Configure MCP Clients
 
 ```bash
 ida-multi-mcp --install
 ```
 
-This copies `ida_multi_mcp.py` to the IDA plugins directory:
-- Windows: `%APPDATA%/Hex-Rays/IDA Pro/plugins/`
-- macOS/Linux: `~/.idapro/plugins/`
+This performs two actions:
+1. Copies `ida_multi_mcp.py` to the IDA plugins directory:
+   - Windows: `%APPDATA%/Hex-Rays/IDA Pro/plugins/`
+   - macOS/Linux: `~/.idapro/plugins/`
+2. Auto-configures all detected MCP clients (Claude Code, Claude Desktop, Cursor, Windsurf, VS Code, Zed, and 20+ more)
 
 If IDA is installed in a custom location:
 ```bash
 ida-multi-mcp --install --ida-dir "C:/Program Files/IDA Pro 9.0"
 ```
 
-## Step 3: Configure MCP Client
-
-Add the following to the user's MCP client configuration:
-
-### Claude Code
-
-Run this command:
+For clients not auto-detected or to view the configuration JSON, run:
 ```bash
-claude mcp add ida-multi-mcp -s user -- ida-multi-mcp
+ida-multi-mcp --config
 ```
 
-Or add to `.claude/config.json`:
-```json
-{
-  "mcpServers": {
-    "ida-multi-mcp": {
-      "command": "ida-multi-mcp"
-    }
-  }
-}
-```
-
-### Claude Desktop
-
-Add to `claude_desktop_config.json`:
-```json
-{
-  "mcpServers": {
-    "ida-multi-mcp": {
-      "command": "ida-multi-mcp"
-    }
-  }
-}
-```
-
-### Cursor
-
-Add to `.cursor/mcp.json`:
-```json
-{
-  "mcpServers": {
-    "ida-multi-mcp": {
-      "command": "ida-multi-mcp"
-    }
-  }
-}
-```
-
-### Windsurf
-
-Add to `.codeium/windsurf/mcp_config.json`:
-```json
-{
-  "mcpServers": {
-    "ida-multi-mcp": {
-      "command": "ida-multi-mcp"
-    }
-  }
-}
-```
-
-## Step 4: Verify
+## Step 3: Verify
 
 1. Open IDA Pro with any binary — the plugin auto-loads (PLUGIN_FIX)
 2. Check the IDA console for: `[ida-multi-mcp] Registered as instance 'xxxx'`
@@ -110,4 +56,4 @@ ida-multi-mcp --uninstall
 pip uninstall ida-multi-mcp
 ```
 
-Then remove `ida-multi-mcp` from your MCP client configuration.
+The `--uninstall` command automatically removes the IDA plugin, cleans up the registry, and removes MCP client configurations.
