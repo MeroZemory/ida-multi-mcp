@@ -86,27 +86,9 @@ def cmd_install(args):
         print(f"\n  Creating IDA plugins directory: {ida_plugins_dir}")
         ida_plugins_dir.mkdir(parents=True, exist_ok=True)
 
-    # Check for ida_mcp package in IDA plugins directory
-    ida_mcp_pkg = ida_plugins_dir / "ida_mcp"
-    ida_mcp_loader = ida_plugins_dir / "ida_mcp.py"
-    if ida_mcp_pkg.exists() or ida_mcp_loader.exists():
-        print("  [ok] ida_mcp package found in IDA plugins directory")
-    else:
-        print("  [!!] ida_mcp package not found in IDA plugins directory")
-        print(f"       Expected at: {ida_mcp_pkg}")
-        print("       Run: ida-pro-mcp --install (from the ida-pro-mcp project)")
-        print("       (Required - provides 71+ IDA tools that ida-multi-mcp routes)")
-
     # Copy the loader file as ida_multi_mcp.py into IDA's plugins directory
     loader_source = Path(__file__).parent / "plugin" / "ida_multi_mcp_loader.py"
     loader_dest = ida_plugins_dir / "ida_multi_mcp.py"
-
-    # Coexistence: ida_mcp.py (original) and ida_multi_mcp.py (ours) can both exist
-    if ida_mcp_loader.exists():
-        print(f"\n  Note: Found existing ida_mcp.py (original ida-pro-mcp plugin)")
-        print(f"  Both plugins can coexist. To avoid conflicts, disable one:")
-        print(f"  - Remove ida_mcp.py to use only ida-multi-mcp")
-        print(f"  - Or keep both (they will bind to different ports)")
 
     # Try symlink first (development-friendly), fall back to copy
     if loader_dest.exists() or loader_dest.is_symlink():

@@ -4,16 +4,13 @@ Replaces the original ida_mcp.py plugin loader. Does everything the original
 does (starts MCP HTTP server with all 71+ tools) PLUS auto-registers with
 the central instance registry for multi-instance support.
 
-Requires:
-- ida-pro-mcp's ida_mcp package to be installed (provides all IDA tools)
-- ida-multi-mcp package to be installed (provides registry)
+The ida_mcp package is bundled with ida-multi-mcp and provides all IDA tools.
 """
 
 import os
 import sys
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import idaapi
 
@@ -30,19 +27,8 @@ from ida_multi_mcp.plugin.registration import (
 )
 
 
-def _unload_package(package_name: str):
-    """Remove every module that belongs to the package from sys.modules."""
-    to_remove = [
-        mod_name
-        for mod_name in sys.modules
-        if mod_name == package_name or mod_name.startswith(package_name + ".")
-    ]
-    for mod_name in to_remove:
-        del sys.modules[mod_name]
-
-
 def _load_ida_mcp():
-    """Load the ida_mcp package (from ida-pro-mcp) and return key components.
+    """Load the ida_mcp package (bundled with ida-multi-mcp).
 
     Returns:
         Tuple of (MCP_SERVER, IdaMcpHttpRequestHandler, init_caches)
@@ -50,14 +36,7 @@ def _load_ida_mcp():
     Raises:
         ImportError: If ida_mcp package is not available
     """
-    # Force fresh load to pick up any changes
-    _unload_package("ida_mcp")
-
-    if TYPE_CHECKING:
-        from ida_mcp import MCP_SERVER, IdaMcpHttpRequestHandler, init_caches
-    else:
-        from ida_mcp import MCP_SERVER, IdaMcpHttpRequestHandler, init_caches
-
+    from ida_multi_mcp.ida_mcp import MCP_SERVER, IdaMcpHttpRequestHandler, init_caches
     return MCP_SERVER, IdaMcpHttpRequestHandler, init_caches
 
 
@@ -119,8 +98,8 @@ class IdaMultiMcpPlugin(idaapi.plugin_t):
             # Load the ida_mcp package (provides MCP_SERVER with 71+ tools)
             mcp_server, handler_class, init_caches = _load_ida_mcp()
         except ImportError as e:
-            print(f"[ida-multi-mcp] ERROR: ida_mcp package not found: {e}")
-            print("[ida-multi-mcp] Install ida-pro-mcp first: pip install ida-pro-mcp")
+            print(f"[ida-multi-mcp] ERROR: ida_mcp package failed to load: {e}")
+            print("[ida-multi-mcp] This indicates a broken installation. Reinstall ida-multi-mcp.")
             return
 
         try:
@@ -143,6 +122,10 @@ class IdaMultiMcpPlugin(idaapi.plugin_t):
             if self.mcp_server._http_server:
                 self.server_port = self.mcp_server._http_server.server_address[1]
                 print(f"[ida-multi-mcp] Server listening on 127.0.0.1:{self.server_port}")
+
+                # Update download base URL to reflect the actual dynamic port
+                from ida_multi_mcp.ida_mcp.rpc import set_download_base_url
+                set_download_base_url(f"http://127.0.0.1:{self.server_port}")
 
                 # Register with central instance registry
                 self.instance_id = register_instance(
