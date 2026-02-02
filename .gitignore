@@ -1,6 +1,10 @@
 # oh-my-claudecode state
 .omc/
 
+# Factory / oh-my-droid local state
+.omd/
+.factory/
+
 # Reference projects (embedded git repos, clone separately)
 references/
 

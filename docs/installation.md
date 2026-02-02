@@ -11,7 +11,11 @@ This guide is for AI agents. Follow each step exactly.
 ## Step 1: Install ida-multi-mcp
 
 ```bash
-pip install git+https://github.com/MeroZemory/ida-multi-mcp.git
+# (Recommended) Clean previous install to avoid stale scripts/config
+ida-multi-mcp --uninstall
+python -m pip uninstall -y ida-multi-mcp
+
+python -m pip install git+https://github.com/MeroZemory/ida-multi-mcp.git
 ```
 
 ## Step 2: Install IDA Plugin and Configure MCP Clients

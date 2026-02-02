@@ -52,12 +52,31 @@ The easiest way to install is to let your AI agent handle it. Copy and paste one
 Or install manually:
 
 ```bash
+# 0. (Recommended) Clean previous install to avoid stale scripts/config
+ida-multi-mcp --uninstall
+python -m pip uninstall -y ida-multi-mcp
+
 # 1. Install ida-multi-mcp
-pip install git+https://github.com/MeroZemory/ida-multi-mcp.git
+python -m pip install git+https://github.com/MeroZemory/ida-multi-mcp.git
 
 # 2. Install IDA plugin + configure all MCP clients
 ida-multi-mcp --install
 ```
+
+## Uninstallation
+
+```bash
+# 1. Remove IDA plugin + remove MCP client configurations
+ida-multi-mcp --uninstall
+
+# (optional) If IDA is installed in a custom location
+ida-multi-mcp --uninstall --ida-dir "C:/Program Files/IDA Pro 9.0"
+
+# 2. Remove the Python package
+python -m pip uninstall ida-multi-mcp
+```
+
+After uninstalling, fully restart IDA Pro and your MCP client(s) so the removed configuration is picked up.
 
 ### For AI Agents
 
