@@ -461,7 +461,7 @@ class McpServer:
             result = tool_response.get("result") if tool_response else None
             return {
                 "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
-                "structuredContent": result if isinstance(result, dict) else {"result": result},
+                "structuredContent": result,
                 "isError": False,
             }
         finally:
@@ -746,15 +746,6 @@ class McpServer:
         # Add outputSchema if return type exists and is not None
         if return_type and return_type is not type(None):
             return_schema = self._type_to_json_schema(return_type)
-
-            # Wrap non-object returns in a "result" property
-            if return_schema.get("type") != "object":
-                return_schema = {
-                    "type": "object",
-                    "properties": {"result": return_schema},
-                    "required": ["result"],
-                }
-
             schema["outputSchema"] = return_schema
 
         return schema

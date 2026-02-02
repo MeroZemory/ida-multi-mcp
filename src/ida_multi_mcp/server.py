@@ -48,8 +48,82 @@ class IdaMultiMcpServer:
     def _register_handlers(self):
         """Register MCP protocol handlers."""
 
+        def _is_result_wrapper_schema(schema: Any) -> bool:
+            if not isinstance(schema, dict):
+                return False
+            if schema.get("type") != "object":
+                return False
+            props = schema.get("properties")
+            if not isinstance(props, dict) or "result" not in props:
+                return False
+            # Treat {result: <T>} as wrapper only when it is the ONLY property
+            return set(props.keys()) == {"result"}
+
+        def _coerce_structured_for_schema(tool_name: str, structured: Any) -> Any:
+            """Ensure structuredContent matches the tool's advertised outputSchema.
+
+            Some servers advertise an object wrapper {result: ...} for non-object returns.
+            Others advertise raw arrays/scalars. We adapt based on cached tool schema.
+            """
+            schema = self._tool_cache.get(tool_name, {}).get("outputSchema")
+
+            # If schema expects wrapper, always wrap non-wrapper values.
+            if _is_result_wrapper_schema(schema):
+                if isinstance(structured, dict) and set(structured.keys()) == {"result"}:
+                    return structured
+                return {"result": structured}
+
+            # If schema does NOT expect wrapper, unwrap legacy {result: ...}.
+            if isinstance(structured, dict) and set(structured.keys()) == {"result"}:
+                return structured.get("result")
+
+            return structured
+
+        def _json_text(value: Any) -> str:
+            return json.dumps(value, indent=2)
+
+        def _schema_preserving_preview(value: Any, max_chars: int) -> Any:
+            """Return a smaller value of the same JSON type (str/list/dict) when huge."""
+            if max_chars <= 0:
+                return value
+            try:
+                if len(json.dumps(value)) <= max_chars:
+                    return value
+            except Exception:
+                return value
+
+            if isinstance(value, str):
+                return value[:max_chars]
+
+            if isinstance(value, list):
+                out: list[Any] = []
+                for item in value:
+                    out.append(item)
+                    try:
+                        if len(json.dumps(out)) > max_chars:
+                            out.pop()
+                            break
+                    except Exception:
+                        break
+                return out
+
+            if isinstance(value, dict):
+                def _truncate(v: Any, depth: int = 0) -> Any:
+                    if depth > 6:
+                        return v
+                    if isinstance(v, str) and len(v) > 1000:
+                        return v[:1000] + f"... [{len(v)} chars total]"
+                    if isinstance(v, list):
+                        return [_truncate(x, depth + 1) for x in v[:50]]
+                    if isinstance(v, dict):
+                        return {k: _truncate(x, depth + 1) for k, x in v.items()}
+                    return v
+
+                return _truncate(value)
+
+            return value
+
         # Override tools/list to return cached tools
-        original_tools_list = self.server._mcp_tools_list
 
         def custom_tools_list(_meta: dict | None = None) -> dict:
             """List all available tools (management + IDA tools)."""
@@ -73,6 +147,7 @@ class IdaMultiMcpServer:
                 result = management.list_instances()
                 return {
                     "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                    "structuredContent": result,
                     "isError": False
                 }
 
@@ -80,6 +155,7 @@ class IdaMultiMcpServer:
                 result = management.get_active_instance()
                 return {
                     "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                    "structuredContent": result,
                     "isError": False
                 }
 
@@ -87,6 +163,7 @@ class IdaMultiMcpServer:
                 result = management.set_active_instance(arguments.get("instance_id", ""))
                 return {
                     "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                    "structuredContent": result,
                     "isError": False
                 }
 
@@ -94,6 +171,7 @@ class IdaMultiMcpServer:
                 result = management.refresh_tools()
                 return {
                     "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                    "structuredContent": result,
                     "isError": False
                 }
 
@@ -120,6 +198,7 @@ class IdaMultiMcpServer:
                 result = self._handle_decompile_to_file(arguments)
                 return {
                     "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                    "structuredContent": result,
                     "isError": "error" in result
                 }
 
@@ -128,59 +207,77 @@ class IdaMultiMcpServer:
                 # Extract max_output_chars if provided (0 = unlimited)
                 max_output = arguments.pop("max_output_chars", DEFAULT_MAX_OUTPUT_CHARS)
 
-                result = self.router.route_request("tools/call", {
+                ida_response = self.router.route_request("tools/call", {
                     "name": name,
                     "arguments": arguments
                 })
 
                 # Format response
-                if "error" in result:
+                if "error" in ida_response:
                     return {
-                        "content": [{"type": "text", "text": f"Error: {json.dumps(result, indent=2)}"}],
+                        "content": [{"type": "text", "text": f"Error: {json.dumps(ida_response, indent=2)}"}],
                         "isError": True
                     }
 
-                # Serialize result
-                result_text = json.dumps(result, indent=2)
-                total_chars = len(result_text)
+                # IDA instance should return an MCP tool result envelope already.
+                content = ida_response.get("content") if isinstance(ida_response, dict) else None
+                is_error = bool(ida_response.get("isError")) if isinstance(ida_response, dict) else False
+                structured = ida_response.get("structuredContent") if isinstance(ida_response, dict) else None
+
+                if structured is None and isinstance(content, list) and content:
+                    # Best-effort: parse JSON text content as structured output
+                    try:
+                        structured = json.loads(content[0].get("text", ""))
+                    except Exception:
+                        structured = None
+
+                structured = _coerce_structured_for_schema(name, structured)
+
+                # If IDA didn't provide content, generate a readable one.
+                if not content:
+                    content = [{"type": "text", "text": _json_text(structured)}]
+
+                # If the tool has an output schema, Factory requires structuredContent.
+                # Even on errors, keep the structured payload if present.
+                if is_error:
+                    return {
+                        "content": content,
+                        **({"structuredContent": structured} if structured is not None else {}),
+                        "isError": True,
+                    }
+
+                # Serialize structured for size checks
+                structured_text = _json_text(structured)
+                total_chars = len(structured_text)
 
                 # Check if truncation needed (max_output=0 means unlimited)
                 if max_output > 0 and total_chars > max_output:
-                    # Cache full response
+                    # Cache full response text for humans (get_cached_output)
                     cache = get_cache()
                     instance_id = arguments.get("instance_id") or self.registry.get_active()
-                    cache_id = cache.store(result_text, tool_name=name, instance_id=instance_id)
+                    cache_id = cache.store(structured_text, tool_name=name, instance_id=instance_id)
 
-                    # Truncate for return
-                    truncated_text = result_text[:max_output]
+                    preview_structured = _schema_preserving_preview(structured, max_output)
+                    preview_text = _json_text(preview_structured)
 
-                    # Add truncation notice to text output
                     truncation_notice = (
                         f"\n\n--- TRUNCATED ---\n"
-                        f"Showing {max_output:,} of {total_chars:,} chars ({total_chars - max_output:,} remaining)\n"
+                        f"Showing ~{max_output:,} of {total_chars:,} chars ({total_chars - max_output:,} remaining)\n"
                         f"cache_id: {cache_id}\n"
                         f"To get more: get_cached_output(cache_id='{cache_id}', offset={max_output})"
                     )
 
                     return {
-                        "content": [{"type": "text", "text": truncated_text + truncation_notice}],
-                        "structuredContent": {
-                            "result": result,
-                            "_truncated": {
-                                "cache_id": cache_id,
-                                "total_chars": total_chars,
-                                "returned_chars": max_output,
-                                "remaining_chars": total_chars - max_output,
-                                "hint": f"Use get_cached_output(cache_id='{cache_id}', offset={max_output}) to get more"
-                            }
-                        },
-                        "isError": False
+                        "content": [{"type": "text", "text": preview_text[:max_output] + truncation_notice}],
+                        "structuredContent": preview_structured,
+                        "isError": False,
                     }
-                else:
-                    return {
-                        "content": [{"type": "text", "text": result_text}],
-                        "isError": False
-                    }
+
+                return {
+                    "content": content,
+                    "structuredContent": structured,
+                    "isError": False,
+                }
 
         self.server.registry.methods["tools/call"] = custom_tools_call
 
