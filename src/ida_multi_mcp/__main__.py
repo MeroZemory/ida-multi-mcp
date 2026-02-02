@@ -212,6 +212,10 @@ def install_mcp_servers(uninstall=False, quiet=False):
                 os.path.join(os.path.expanduser("~"), ".trae"),
                 "mcp_config.json",
             ),
+            "Factory Droid": (
+                os.path.join(os.path.expanduser("~"), ".factory"),
+                "mcp.json",
+            ),
             "VS Code": (
                 os.path.join(
                     os.getenv("APPDATA", ""),
@@ -363,6 +367,10 @@ def install_mcp_servers(uninstall=False, quiet=False):
                 os.path.join(os.path.expanduser("~"), ".trae"),
                 "mcp_config.json",
             ),
+            "Factory Droid": (
+                os.path.join(os.path.expanduser("~"), ".factory"),
+                "mcp.json",
+            ),
             "VS Code": (
                 os.path.join(
                     os.path.expanduser("~"),
@@ -486,6 +494,10 @@ def install_mcp_servers(uninstall=False, quiet=False):
                 os.path.join(os.path.expanduser("~"), ".trae"),
                 "mcp_config.json",
             ),
+            "Factory Droid": (
+                os.path.join(os.path.expanduser("~"), ".factory"),
+                "mcp.json",
+            ),
             "VS Code": (
                 os.path.join(
                     os.path.expanduser("~"),
@@ -515,6 +527,9 @@ def install_mcp_servers(uninstall=False, quiet=False):
     for name, (config_dir, config_file) in configs.items():
         config_path = os.path.join(config_dir, config_file)
         is_toml = config_file.endswith(".toml")
+
+        if name == "Factory Droid" and not uninstall:
+            os.makedirs(config_dir, exist_ok=True)
 
         if not os.path.exists(config_dir):
             action = "uninstall" if uninstall else "installation"
