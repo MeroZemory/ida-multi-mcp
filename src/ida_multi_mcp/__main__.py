@@ -71,12 +71,17 @@ def copy_python_env(env):
     return result
 
 
-def generate_mcp_config():
+def generate_mcp_config(*, include_type: bool = False):
     """Generate MCP server configuration for ida-multi-mcp."""
     mcp_config = {
         "command": get_python_executable(),
         "args": ["-m", "ida_multi_mcp"],
     }
+
+    # Factory Droid's ~/.factory/mcp.json schema requires an explicit transport type.
+    if include_type:
+        mcp_config["type"] = "stdio"
+
     env = {}
     if copy_python_env(env):
         mcp_config["env"] = env
@@ -628,7 +633,9 @@ def install_mcp_servers(uninstall=False, quiet=False):
                 continue
             del mcp_servers[SERVER_NAME]
         else:
-            mcp_servers[SERVER_NAME] = generate_mcp_config()
+            mcp_servers[SERVER_NAME] = generate_mcp_config(
+                include_type=(name == "Factory Droid")
+            )
 
         # Atomic write: temp file + rename
         suffix = ".toml" if is_toml else ".json"

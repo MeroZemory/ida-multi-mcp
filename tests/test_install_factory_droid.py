@@ -34,6 +34,7 @@ class TestInstallMcpServersFactoryDroid(unittest.TestCase):
                 config = json.loads(config_path.read_text(encoding="utf-8"))
                 self.assertIn("mcpServers", config)
                 self.assertIn(SERVER_NAME, config["mcpServers"])
+                self.assertEqual(config["mcpServers"][SERVER_NAME]["type"], "stdio")
                 self.assertEqual(
                     config["mcpServers"][SERVER_NAME]["args"], ["-m", "ida_multi_mcp"]
                 )
