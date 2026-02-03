@@ -8,6 +8,7 @@ import sys
 import argparse
 import json
 import tempfile
+import time
 from pathlib import Path
 import shutil
 
@@ -15,6 +16,45 @@ from .server import serve
 from .registry import InstanceRegistry
 
 SERVER_NAME = "ida-multi-mcp"
+
+
+def _replace_or_overwrite_file(src: str, dst: str, *, attempts: int = 6) -> bool:
+    """Best-effort atomic replace with Windows-friendly fallback.
+
+    On Windows, os.replace() can fail with WinError 5 if the destination is open
+    without FILE_SHARE_DELETE (common for editor-held settings files). In that case,
+    we retry briefly, then fall back to overwriting the destination in-place.
+    """
+
+    # Try atomic replace first (with retries for transient Windows locks)
+    for i in range(max(1, attempts)):
+        try:
+            os.replace(src, dst)
+            return True
+        except PermissionError:
+            if sys.platform != "win32":
+                raise
+            if i < attempts - 1:
+                time.sleep(0.05 * (i + 1))
+                continue
+            break
+
+    # Fallback: overwrite in-place (non-atomic) for Windows "access denied" renames
+    try:
+        if os.path.exists(dst):
+            try:
+                os.chmod(dst, 0o666)
+            except Exception:
+                pass
+        shutil.copyfile(src, dst)
+        os.unlink(src)
+        return True
+    except Exception:
+        try:
+            os.unlink(src)
+        except Exception:
+            pass
+        return False
 
 
 def get_python_executable():
@@ -637,7 +677,7 @@ def install_mcp_servers(uninstall=False, quiet=False):
                 include_type=(name == "Factory Droid")
             )
 
-        # Atomic write: temp file + rename
+        # Atomic write: temp file + replace (with Windows-friendly fallback)
         suffix = ".toml" if is_toml else ".json"
         fd, temp_path = tempfile.mkstemp(
             dir=config_dir, prefix=".tmp_", suffix=suffix, text=True
@@ -658,9 +698,20 @@ def install_mcp_servers(uninstall=False, quiet=False):
                         f.write(buf.getvalue().encode("utf-8"))
                 else:
                     json.dump(config, f, indent=2)
-            os.replace(temp_path, config_path)
-        except:
-            os.unlink(temp_path)
+
+            if not _replace_or_overwrite_file(temp_path, config_path):
+                if not quiet:
+                    action = "uninstall" if uninstall else "installation"
+                    print(
+                        f"Skipping {name} {action}\n"
+                        f"  Config: {config_path} (permission denied; close the app using it and retry)"
+                    )
+                continue
+        except Exception:
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
             raise
 
         if not quiet:
