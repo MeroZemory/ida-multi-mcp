@@ -51,6 +51,27 @@ The easiest way to install is to let your AI agent handle it. Copy and paste one
 
 Or install manually:
 
+#### macOS
+
+> **Important:** IDA Pro may use a different Python version than your system default.
+> Check IDA's Python version first: in the IDA console, run `import sys; print(sys.version)`.
+
+```bash
+# 1. Install CLI tool via pipx
+pipx install git+https://github.com/MeroZemory/ida-multi-mcp.git
+
+# 2. Install package for IDA's Python (replace python3.11 with IDA's version)
+python3.11 -m pip install --user git+https://github.com/MeroZemory/ida-multi-mcp.git
+
+# 3. Install IDA plugin + configure all MCP clients
+ida-multi-mcp --install
+
+# 4. Add MCP server to your client (Claude Code example)
+claude mcp add ida-multi-mcp -s user -- ida-multi-mcp serve
+```
+
+#### Windows
+
 ```bash
 # 0. (Recommended) Clean previous install to avoid stale scripts/config
 ida-multi-mcp --uninstall
@@ -63,6 +84,8 @@ python -m pip install git+https://github.com/MeroZemory/ida-multi-mcp.git
 ida-multi-mcp --install
 ```
 
+> If IDA uses a different Python version than your default, use `py -3.12` (replace with IDA's version) instead of `python`.
+
 ## Uninstallation
 
 ```bash
@@ -74,6 +97,8 @@ ida-multi-mcp --uninstall --ida-dir "C:/Program Files/IDA Pro 9.0"
 
 # 2. Remove the Python package
 python -m pip uninstall ida-multi-mcp
+# If installed via pipx:
+pipx uninstall ida-multi-mcp
 ```
 
 After uninstalling, fully restart IDA Pro and your MCP client(s) so the removed configuration is picked up.
@@ -87,9 +112,10 @@ curl -s https://raw.githubusercontent.com/MeroZemory/ida-multi-mcp/main/docs/ins
 ```
 
 The guide covers:
-1. Package installation (`pip install`)
-2. IDA plugin setup + MCP client auto-configuration (`ida-multi-mcp --install`)
-3. Verification steps
+1. Platform-specific package installation (macOS, Windows, Linux)
+2. IDA Python version matching
+3. IDA plugin setup + MCP client auto-configuration (`ida-multi-mcp --install`)
+4. Verification and troubleshooting
 
 ### Supported MCP Clients
 
@@ -333,23 +359,26 @@ to see available instances, then use a valid ID.
 
 You opened a different binary in that IDA instance. This is expected. Use the new instance ID (`px3a`).
 
-### Plugin doesn't load in IDA
+### Plugin doesn't load in IDA / "No module named 'ida_multi_mcp'"
 
-Check:
-1. IDA plugins directory exists: `%APPDATA%/Hex-Rays/IDA Pro/plugins/` (Windows)
-2. `ida_multi_mcp.py` is in the directory
-3. `ida-multi-mcp` package is installed: `pip list | grep ida-multi-mcp`
+This usually means IDA's Python cannot find the package due to a **Python version mismatch**.
+
+1. Check IDA's Python version — in the IDA console, run:
+   ```
+   import sys; print(sys.version)
+   ```
+2. Install the package for that specific version:
+   ```bash
+   # macOS (e.g., IDA uses Python 3.11):
+   python3.11 -m pip install --user git+https://github.com/MeroZemory/ida-multi-mcp.git
+
+   # Windows (e.g., IDA uses Python 3.12):
+   py -3.12 -m pip install git+https://github.com/MeroZemory/ida-multi-mcp.git
+   ```
+3. Ensure the IDA plugins directory contains `ida_multi_mcp.py`:
+   - Windows: `%APPDATA%/Hex-Rays/IDA Pro/plugins/`
+   - macOS/Linux: `~/.idapro/plugins/`
 4. Restart IDA Pro
-
-## Uninstallation
-
-```bash
-# Remove plugin, registry, and MCP client configurations
-ida-multi-mcp --uninstall
-
-# Remove package
-pip uninstall ida-multi-mcp
-```
 
 ## Design Decisions
 
