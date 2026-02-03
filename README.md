@@ -29,7 +29,7 @@ MCP Client (Claude, Cursor, etc.)
 - **Dynamic tool discovery** — All 71+ IDA tools available automatically
 - **Cross-binary analysis** — Target specific instances via `instance_id` parameter
 - **Smart instance tracking** — 4-character IDs (k7m2, px3a, etc.) with automatic binary-change detection
-- **File-based registry** — `~/.ida-mcp/instances.json` tracks all active instances
+- **File-based registry** — Tracks all active instances
 - **Graceful fallback** — Handles binary changes, stale instances, and crashes
 
 ## Requirements
@@ -53,22 +53,33 @@ Or install manually:
 
 #### macOS
 
-> **Important:** IDA Pro may use a different Python version than your system default.
-> Check IDA's Python version first: in the IDA console, run `import sys; print(sys.version)`.
+> **Important:** IDA Pro typically uses a different Python version than your system default (e.g., IDA uses Python 3.11 while macOS ships with 3.14). You must install the package for **both** your terminal Python and IDA's Python.
+
+**Step 1: Check IDA's Python version**
+
+Open IDA Pro, then in the IDA console run:
+```
+Python> import sys; print(sys.version)
+```
+Note the version (e.g., `3.11`).
+
+**Step 2: Install**
 
 ```bash
-# 1. Install CLI tool via pipx
+# 1. Install CLI tool via pipx (for terminal commands)
 pipx install git+https://github.com/MeroZemory/ida-multi-mcp.git
 
-# 2. Install package for IDA's Python (replace python3.11 with IDA's version)
+# 2. Install package for IDA's Python (replace 3.11 with your IDA's version)
 python3.11 -m pip install --user git+https://github.com/MeroZemory/ida-multi-mcp.git
 
-# 3. Install IDA plugin + configure all MCP clients
+# 3. Install IDA plugin + configure MCP clients
 ida-multi-mcp --install
 
-# 4. Add MCP server to your client (Claude Code example)
-claude mcp add ida-multi-mcp -s user -- ida-multi-mcp serve
+# 4. Configure Claude Code manually (recommended over --install for Claude Code)
+claude mcp add ida-multi-mcp -s user -- ida-multi-mcp
 ```
+
+> **Note:** `ida-multi-mcp --install` registers MCP servers using `python3 -m ida_multi_mcp`, which may point to the wrong Python version on macOS. For Claude Code, use `claude mcp add` as shown above to ensure it uses the pipx-managed CLI directly.
 
 #### Windows
 
@@ -86,22 +97,15 @@ ida-multi-mcp --install
 
 > If IDA uses a different Python version than your default, use `py -3.12` (replace with IDA's version) instead of `python`.
 
-## Uninstallation
+#### Linux
 
 ```bash
-# 1. Remove IDA plugin + remove MCP client configurations
-ida-multi-mcp --uninstall
+# 1. Install ida-multi-mcp
+pip install --user git+https://github.com/MeroZemory/ida-multi-mcp.git
 
-# (optional) If IDA is installed in a custom location
-ida-multi-mcp --uninstall --ida-dir "C:/Program Files/IDA Pro 9.0"
-
-# 2. Remove the Python package
-python -m pip uninstall ida-multi-mcp
-# If installed via pipx:
-pipx uninstall ida-multi-mcp
+# 2. Install IDA plugin + configure MCP clients
+ida-multi-mcp --install
 ```
-
-After uninstalling, fully restart IDA Pro and your MCP client(s) so the removed configuration is picked up.
 
 ### For AI Agents
 
@@ -152,6 +156,34 @@ For clients not auto-detected or to view the configuration JSON, run:
 ```bash
 ida-multi-mcp --config
 ```
+
+## Uninstallation
+
+#### macOS
+
+```bash
+# 1. Remove IDA plugin + MCP client configurations
+ida-multi-mcp --uninstall
+
+# 2. Remove packages
+pipx uninstall ida-multi-mcp
+python3.11 -m pip uninstall -y ida-multi-mcp  # replace 3.11 with IDA's version
+```
+
+#### Windows
+
+```bash
+# 1. Remove IDA plugin + MCP client configurations
+ida-multi-mcp --uninstall
+
+# (optional) If IDA is installed in a custom location
+ida-multi-mcp --uninstall --ida-dir "C:\Program Files\IDA Pro 9.0"
+
+# 2. Remove the Python package
+python -m pip uninstall -y ida-multi-mcp
+```
+
+After uninstalling, fully restart IDA Pro and your MCP client(s) so the removed configuration is picked up.
 
 ## Usage
 
@@ -275,7 +307,7 @@ Install the IDA plugin and auto-configure all detected MCP clients (Claude Code,
 
 ```bash
 ida-multi-mcp --install
-ida-multi-mcp --install --ida-dir "C:/Program Files/IDA Pro 9.0"
+ida-multi-mcp --install --ida-dir "C:\Program Files\IDA Pro 9.0"  # Windows custom path
 ```
 
 ### `ida-multi-mcp --uninstall [--ida-dir DIR]`
@@ -296,7 +328,9 @@ ida-multi-mcp --config
 
 ### Instance Registry
 
-Location: `~/.ida-mcp/instances.json`
+Location:
+- macOS/Linux: `~/.ida-mcp/instances.json`
+- Windows: `%USERPROFILE%\.ida-mcp\instances.json`
 
 Each registered instance includes:
 - **id** — 4-char instance identifier (k7m2, px3a, etc.)
@@ -308,6 +342,11 @@ Each registered instance includes:
 - **arch** — Architecture (x86_64, x86, arm64, etc.)
 - **registered_at** — Timestamp when instance registered
 - **last_heartbeat** — Last heartbeat check timestamp
+
+### IDA Plugin Directory
+
+- macOS/Linux: `~/.idapro/plugins/`
+- Windows: `%APPDATA%\Hex-Rays\IDA Pro\plugins\`
 
 ### Request Routing
 
@@ -342,10 +381,10 @@ When a binary change is detected:
 ### "No IDA instances registered"
 
 Make sure:
-1. IDA Pro is running
+1. IDA Pro is running with a binary loaded
 2. Check IDA's plugin list (Edit → Plugins → Scan) to confirm `ida-multi-mcp` plugin loaded
 3. Check IDA console for error messages
-4. Run `ida-multi-mcp list` again
+4. Run `ida-multi-mcp --list` again
 
 ### "Instance 'k7m2' not found"
 
@@ -367,18 +406,47 @@ This usually means IDA's Python cannot find the package due to a **Python versio
    ```
    import sys; print(sys.version)
    ```
-2. Install the package for that specific version:
-   ```bash
-   # macOS (e.g., IDA uses Python 3.11):
-   python3.11 -m pip install --user git+https://github.com/MeroZemory/ida-multi-mcp.git
+2. Install the package for that specific Python version:
 
-   # Windows (e.g., IDA uses Python 3.12):
+   **macOS:**
+   ```bash
+   # Replace 3.11 with IDA's actual Python version
+   python3.11 -m pip install --user git+https://github.com/MeroZemory/ida-multi-mcp.git
+   ```
+
+   **Windows:**
+   ```bash
+   # Replace 3.12 with IDA's actual Python version
    py -3.12 -m pip install git+https://github.com/MeroZemory/ida-multi-mcp.git
    ```
+
 3. Ensure the IDA plugins directory contains `ida_multi_mcp.py`:
-   - Windows: `%APPDATA%/Hex-Rays/IDA Pro/plugins/`
    - macOS/Linux: `~/.idapro/plugins/`
+   - Windows: `%APPDATA%\Hex-Rays\IDA Pro\plugins\`
 4. Restart IDA Pro
+
+### MCP server fails to connect (macOS)
+
+If your MCP client shows `Status: failed` for ida-multi-mcp, the registered command may point to the wrong Python version.
+
+1. Check what command is configured (e.g., in `.claude.json`, `.cursor/mcp.json`)
+2. If it shows `python3 -m ida_multi_mcp`, replace it with the pipx-managed CLI:
+
+   **Claude Code:**
+   ```bash
+   claude mcp remove ida-multi-mcp -s user
+   claude mcp add ida-multi-mcp -s user -- ida-multi-mcp
+   ```
+
+   **Other clients:** Edit the MCP config JSON and change:
+   ```json
+   {
+     "command": "ida-multi-mcp",
+     "args": []
+   }
+   ```
+
+3. Restart the MCP client
 
 ## Design Decisions
 
