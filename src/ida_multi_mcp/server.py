@@ -429,6 +429,38 @@ class IdaMultiMcpServer:
                 "type": "object",
                 "properties": {},
                 "required": []
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "active": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "null"}
+                        ],
+                        "description": "Currently active instance id (or null if none)"
+                    },
+                    "count": {"type": "integer"},
+                    "instances": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "active": {"type": "boolean"},
+                                "binary_name": {"type": "string"},
+                                "binary_path": {"type": "string"},
+                                "arch": {"type": "string"},
+                                "host": {"type": "string"},
+                                "port": {"type": "integer"},
+                                "pid": {"type": "integer"},
+                                "registered_at": {"type": "string"}
+                            },
+                            "required": ["id", "active", "binary_name", "binary_path", "arch", "host", "port", "pid", "registered_at"]
+                        }
+                    }
+                },
+                "required": ["active", "count", "instances"]
             }
         }
 

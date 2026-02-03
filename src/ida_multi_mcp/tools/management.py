@@ -32,7 +32,7 @@ def _get_registry() -> "InstanceRegistry":
     return _registry
 
 
-def list_instances() -> list[dict]:
+def list_instances() -> dict:
     """List all registered IDA Pro instances with their metadata.
 
     Returns instance ID, binary name, path, architecture, host, port,
@@ -54,7 +54,11 @@ def list_instances() -> list[dict]:
             "pid": info.get("pid", 0),
             "registered_at": info.get("registered_at", ""),
         })
-    return result
+    return {
+        "active": active,
+        "count": len(result),
+        "instances": result,
+    }
 
 
 def get_active_instance() -> dict:
