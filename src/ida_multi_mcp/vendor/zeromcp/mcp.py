@@ -269,6 +269,7 @@ class McpServer:
         self.registry.methods["resources/read"] = self._mcp_resources_read
         self.registry.methods["prompts/list"] = self._mcp_prompts_list
         self.registry.methods["prompts/get"] = self._mcp_prompts_get
+        self.registry.methods["notifications/initialized"] = self._mcp_notifications_initialized
         self.registry.methods["notifications/cancelled"] = self._mcp_notifications_cancelled
 
     def tool(self, func: Callable) -> Callable:
@@ -285,7 +286,7 @@ class McpServer:
 
     def serve(self, host: str, port: int, *, background = True, request_handler = McpHttpRequestHandler):
         if self._running:
-            print("[MCP] Server is already running")
+            print("[MCP] Server is already running", file=sys.stderr)
             return
 
         # Create server with deferred binding
@@ -315,15 +316,15 @@ class McpServer:
         # Only start thread after successful bind
         self._running = True
 
-        print("[MCP] Server started:")
-        print(f"  Streamable HTTP: http://{host}:{port}/mcp")
-        print(f"  SSE: http://{host}:{port}/sse")
+        print("[MCP] Server started:", file=sys.stderr)
+        print(f"  Streamable HTTP: http://{host}:{port}/mcp", file=sys.stderr)
+        print(f"  SSE: http://{host}:{port}/sse", file=sys.stderr)
 
         def serve_forever():
             try:
                 self._http_server.serve_forever() # type: ignore
             except Exception as e:
-                print(f"[MCP] Server error: {e}")
+                print(f"[MCP] Server error: {e}", file=sys.stderr)
                 traceback.print_exc()
             finally:
                 self._running = False
@@ -357,7 +358,7 @@ class McpServer:
             self._server_thread.join()
             self._server_thread = None
 
-        print("[MCP] Server stopped")
+        print("[MCP] Server stopped", file=sys.stderr)
 
     def stdio(self, stdin: BinaryIO | None = None, stdout: BinaryIO | None = None):
         stdin = stdin or sys.stdin.buffer
@@ -393,7 +394,7 @@ class McpServer:
         return {
             "protocolVersion": getattr(self._protocol_version, "data", protocolVersion),
             "capabilities": {
-                "tools": {},
+                "tools": {"listChanged": False},
                 "resources": {
                     "subscribe": False,
                     "listChanged": False,
@@ -459,19 +460,28 @@ class McpServer:
                 }
 
             result = tool_response.get("result") if tool_response else None
+            # Wrap non-object results to match outputSchema (MCP requires type: "object")
+            structured = result
+            if result is not None and not isinstance(result, dict):
+                structured = {"result": result}
             return {
                 "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
-                "structuredContent": result,
+                "structuredContent": structured,
                 "isError": False,
             }
         finally:
             if request_id is not None:
                 unregister_pending_request(request_id)
 
+    def _mcp_notifications_initialized(self) -> None:
+        """MCP notifications/initialized - client signals init complete"""
+        # No-op: notification acknowledgement, no response needed
+        pass
+
     def _mcp_notifications_cancelled(self, requestId: int | str, reason: str | None = None) -> None:
         """MCP notifications/cancelled - cancel an in-flight request"""
         if cancel_request(requestId):
-            print(f"[MCP] Cancelled request {requestId}: {reason or 'no reason'}")
+            print(f"[MCP] Cancelled request {requestId}: {reason or 'no reason'}", file=sys.stderr)
         # Notifications don't return a response
 
     def _mcp_resources_list(self, _meta: dict | None = None) -> dict:
@@ -744,8 +754,15 @@ class McpServer:
         }
 
         # Add outputSchema if return type exists and is not None
+        # MCP spec requires outputSchema.type == "object", so wrap non-object types
         if return_type and return_type is not type(None):
             return_schema = self._type_to_json_schema(return_type)
+            if return_schema.get("type") != "object":
+                return_schema = {
+                    "type": "object",
+                    "properties": {"result": return_schema},
+                    "required": ["result"],
+                }
             schema["outputSchema"] = return_schema
 
         return schema

@@ -1,0 +1,1885 @@
+[
+  {
+    "name": "lookup_funcs",
+    "description": "Get functions by address or name (auto-detects)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "queries": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Address(es) or name(s)"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "queries"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "int_convert",
+    "description": "Convert numbers to different formats",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "inputs": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "description": "Number string to convert"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "description": "Byte size for conversion (omit for auto)"
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Number string to convert"
+                },
+                "size": {
+                  "type": "integer",
+                  "description": "Byte size for conversion (omit for auto)"
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          ],
+          "description": "Convert numbers to various formats (hex, decimal, binary, ascii)"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "inputs"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "list_funcs",
+    "description": "List functions",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "queries": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "filter": {
+                    "type": "string",
+                    "description": "Optional glob pattern to filter results"
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "description": "Starting index (default: 0)"
+                  },
+                  "count": {
+                    "type": "integer",
+                    "description": "Maximum number of results (default: 50, 0 for all)"
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "filter": {
+                  "type": "string",
+                  "description": "Optional glob pattern to filter results"
+                },
+                "offset": {
+                  "type": "integer",
+                  "description": "Starting index (default: 0)"
+                },
+                "count": {
+                  "type": "integer",
+                  "description": "Maximum number of results (default: 50, 0 for all)"
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "List functions with optional filtering and pagination"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "queries"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "list_globals",
+    "description": "List globals",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "queries": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "filter": {
+                    "type": "string",
+                    "description": "Optional glob pattern to filter results"
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "description": "Starting index (default: 0)"
+                  },
+                  "count": {
+                    "type": "integer",
+                    "description": "Maximum number of results (default: 50, 0 for all)"
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "filter": {
+                  "type": "string",
+                  "description": "Optional glob pattern to filter results"
+                },
+                "offset": {
+                  "type": "integer",
+                  "description": "Starting index (default: 0)"
+                },
+                "count": {
+                  "type": "integer",
+                  "description": "Maximum number of results (default: 50, 0 for all)"
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "List global variables with optional filtering and pagination"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "queries"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "imports",
+    "description": "List imports",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "offset": {
+          "type": "integer",
+          "description": "Offset"
+        },
+        "count": {
+          "type": "integer",
+          "description": "Count (0=all)"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "offset",
+        "count"
+      ]
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "find_regex",
+    "description": "Search strings with case-insensitive regex patterns",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern to search for in strings"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Max matches (default: 30, max: 500)"
+        },
+        "offset": {
+          "type": "integer",
+          "description": "Skip first N matches (default: 0)"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "pattern"
+      ]
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "decompile",
+    "description": "Decompile function to pseudocode",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "addr": {
+          "type": "string",
+          "description": "Function address to decompile"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "addr"
+      ]
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "disasm",
+    "description": "Disassemble function to assembly instructions",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "addr": {
+          "type": "string",
+          "description": "Function address to disassemble"
+        },
+        "max_instructions": {
+          "type": "integer",
+          "description": "Max instructions per function (default: 5000, max: 50000)"
+        },
+        "offset": {
+          "type": "integer",
+          "description": "Skip first N instructions (default: 0)"
+        },
+        "include_total": {
+          "type": "boolean",
+          "description": "Compute total instruction count (default: false)"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "addr"
+      ]
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "xrefs_to",
+    "description": "Get cross-references to specified addresses",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "addrs": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Addresses to find cross-references to"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Max xrefs per address (default: 100, max: 1000)"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "addrs"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "xrefs_to_field",
+    "description": "Get cross-references to structure fields",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "queries": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "struct": {
+                    "type": "string",
+                    "description": "Structure name"
+                  },
+                  "field": {
+                    "type": "string",
+                    "description": "Field name"
+                  }
+                },
+                "required": [
+                  "struct",
+                  "field"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "struct": {
+                  "type": "string",
+                  "description": "Structure name"
+                },
+                "field": {
+                  "type": "string",
+                  "description": "Field name"
+                }
+              },
+              "required": [
+                "struct",
+                "field"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "queries"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "callees",
+    "description": "Get functions called by the specified functions",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "addrs": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Function addresses to get callees for"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Max callees per function (default: 200, max: 500)"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "addrs"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "find_bytes",
+    "description": "Search for byte patterns in the binary (supports wildcards with ??)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "patterns": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Byte patterns to search for (e.g. '48 8B ?? ??')"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Max matches per pattern (default: 1000, max: 10000)"
+        },
+        "offset": {
+          "type": "integer",
+          "description": "Skip first N matches (default: 0)"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "patterns"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "basic_blocks",
+    "description": "Get control flow graph basic blocks for functions",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "addrs": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Function addresses to get basic blocks for"
+        },
+        "max_blocks": {
+          "type": "integer",
+          "description": "Max basic blocks per function (default: 1000, max: 10000)"
+        },
+        "offset": {
+          "type": "integer",
+          "description": "Skip first N blocks (default: 0)"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "addrs"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "find",
+    "description": "Search for patterns in the binary (strings, immediate values, or references)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Search type: 'string', 'immediate', 'data_ref', or 'code_ref'"
+        },
+        "targets": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "description": "Search targets (strings, integers, or addresses)"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Max matches per target (default: 1000, max: 10000)"
+        },
+        "offset": {
+          "type": "integer",
+          "description": "Skip first N matches (default: 0)"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "type",
+        "targets"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "export_funcs",
+    "description": "Export function data in various formats",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "addrs": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Function addresses to export"
+        },
+        "format": {
+          "type": "string",
+          "description": "Export format: json (default), c_header, or prototypes"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "addrs"
+      ]
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "callgraph",
+    "description": "Build call graph starting from root functions",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "roots": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Root function addresses to start call graph traversal from"
+        },
+        "max_depth": {
+          "type": "integer",
+          "description": "Maximum depth for call graph traversal"
+        },
+        "max_nodes": {
+          "type": "integer",
+          "description": "Max nodes across the graph (default: 1000, max: 100000)"
+        },
+        "max_edges": {
+          "type": "integer",
+          "description": "Max edges across the graph (default: 5000, max: 200000)"
+        },
+        "max_edges_per_func": {
+          "type": "integer",
+          "description": "Max edges per function (default: 200, max: 5000)"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "roots"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "get_bytes",
+    "description": "Read bytes from memory addresses",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "regions": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string",
+                    "description": "Address to read from (hex or decimal)"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "description": "Number of bytes to read"
+                  }
+                },
+                "required": [
+                  "addr",
+                  "size"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "addr": {
+                  "type": "string",
+                  "description": "Address to read from (hex or decimal)"
+                },
+                "size": {
+                  "type": "integer",
+                  "description": "Number of bytes to read"
+                }
+              },
+              "required": [
+                "addr",
+                "size"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "regions"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "get_int",
+    "description": "Read integer values from memory addresses",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "queries": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string",
+                    "description": "Address to read from (hex or decimal)"
+                  },
+                  "ty": {
+                    "type": "string",
+                    "description": "Integer class (i8/u64/i16le/i16be/etc)"
+                  }
+                },
+                "required": [
+                  "addr",
+                  "ty"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "addr": {
+                  "type": "string",
+                  "description": "Address to read from (hex or decimal)"
+                },
+                "ty": {
+                  "type": "string",
+                  "description": "Integer class (i8/u64/i16le/i16be/etc)"
+                }
+              },
+              "required": [
+                "addr",
+                "ty"
+              ],
+              "additionalProperties": false
+            }
+          ],
+          "description": "Integer read requests (ty, addr). ty: i8/u64/i16le/i16be/etc"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "queries"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "get_string",
+    "description": "Read strings from memory addresses",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "addrs": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Addresses to read strings from"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "addrs"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "get_global_value",
+    "description": "Read global variable values by address or name\n    (auto-detects hex addresses vs names)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "queries": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Global variable addresses or names to read values from"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "queries"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "patch",
+    "description": "Patch bytes at memory addresses with hex data",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "patches": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string",
+                    "description": "Address to patch (hex or decimal)"
+                  },
+                  "data": {
+                    "type": "string",
+                    "description": "Hex data to write (space-separated bytes)"
+                  }
+                },
+                "required": [
+                  "addr",
+                  "data"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "addr": {
+                  "type": "string",
+                  "description": "Address to patch (hex or decimal)"
+                },
+                "data": {
+                  "type": "string",
+                  "description": "Hex data to write (space-separated bytes)"
+                }
+              },
+              "required": [
+                "addr",
+                "data"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "patches"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "put_int",
+    "description": "Write integer values to memory addresses",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string",
+                    "description": "Address to write to (hex or decimal)"
+                  },
+                  "ty": {
+                    "type": "string",
+                    "description": "Integer class (i8/u64/i16le/i16be/etc)"
+                  },
+                  "value": {
+                    "type": "string",
+                    "description": "Integer value as string (decimal or 0x..; negatives allowed for signed)"
+                  }
+                },
+                "required": [
+                  "addr",
+                  "ty",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "addr": {
+                  "type": "string",
+                  "description": "Address to write to (hex or decimal)"
+                },
+                "ty": {
+                  "type": "string",
+                  "description": "Integer class (i8/u64/i16le/i16be/etc)"
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Integer value as string (decimal or 0x..; negatives allowed for signed)"
+                }
+              },
+              "required": [
+                "addr",
+                "ty",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          ],
+          "description": "Integer write requests (ty, addr, value). value is a string; supports 0x.. and negatives"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "items"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "declare_type",
+    "description": "Declare types",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "decls": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "C type declarations"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "decls"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "read_struct",
+    "description": "Reads struct type definition and parses actual memory values at the\n    given address as instances of that struct type.\n\n    If struct name is not provided, attempts to auto-detect from address.\n    Auto-detection only works if IDA already has type information applied\n    at that address\n\n    Returns struct layout with actual memory values for each field.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "queries": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string",
+                    "description": "Memory address (hex or decimal)"
+                  },
+                  "struct": {
+                    "type": "string",
+                    "description": "Structure name (optional, auto-detect if omitted)"
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "addr": {
+                  "type": "string",
+                  "description": "Memory address (hex or decimal)"
+                },
+                "struct": {
+                  "type": "string",
+                  "description": "Structure name (optional, auto-detect if omitted)"
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "queries"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "search_structs",
+    "description": "Search structs",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filter": {
+          "type": "string",
+          "description": "Case-insensitive substring to search for in structure names"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "filter"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "set_type",
+    "description": "Apply types (function/global/local/stack)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "edits": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string",
+                    "description": "Memory address"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Variable/function name"
+                  },
+                  "ty": {
+                    "type": "string",
+                    "description": "Type name or declaration"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "description": "Type of entity (auto-detected if omitted)"
+                  },
+                  "signature": {
+                    "type": "string",
+                    "description": "Function signature (for kind=function)"
+                  },
+                  "variable": {
+                    "type": "string",
+                    "description": "Local variable name (for kind=local)"
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "addr": {
+                  "type": "string",
+                  "description": "Memory address"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Variable/function name"
+                },
+                "ty": {
+                  "type": "string",
+                  "description": "Type name or declaration"
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "Type of entity (auto-detected if omitted)"
+                },
+                "signature": {
+                  "type": "string",
+                  "description": "Function signature (for kind=function)"
+                },
+                "variable": {
+                  "type": "string",
+                  "description": "Local variable name (for kind=local)"
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "edits"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "infer_types",
+    "description": "Infer types",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "addrs": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Addresses to infer types for"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "addrs"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "set_comments",
+    "description": "Set comments at addresses (both disassembly and decompiler views)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string",
+                    "description": "Address (hex or decimal)"
+                  },
+                  "comment": {
+                    "type": "string",
+                    "description": "Comment text"
+                  }
+                },
+                "required": [
+                  "addr",
+                  "comment"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "addr": {
+                  "type": "string",
+                  "description": "Address (hex or decimal)"
+                },
+                "comment": {
+                  "type": "string",
+                  "description": "Comment text"
+                }
+              },
+              "required": [
+                "addr",
+                "comment"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "items"
+      ]
+    }
+  },
+  {
+    "name": "patch_asm",
+    "description": "Patch assembly instructions at addresses",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string",
+                    "description": "Address (hex or decimal)"
+                  },
+                  "asm": {
+                    "type": "string",
+                    "description": "Assembly instruction(s), semicolon-separated"
+                  }
+                },
+                "required": [
+                  "addr",
+                  "asm"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "addr": {
+                  "type": "string",
+                  "description": "Address (hex or decimal)"
+                },
+                "asm": {
+                  "type": "string",
+                  "description": "Assembly instruction(s), semicolon-separated"
+                }
+              },
+              "required": [
+                "addr",
+                "asm"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "items"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "rename",
+    "description": "Unified rename operation for functions, globals, locals, and stack variables",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "batch": {
+          "type": "object",
+          "properties": {
+            "func": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "addr": {
+                        "type": "string",
+                        "description": "Function address (hex or decimal)"
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "New function name"
+                      }
+                    },
+                    "required": [
+                      "addr",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "addr": {
+                      "type": "string",
+                      "description": "Function address (hex or decimal)"
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "New function name"
+                    }
+                  },
+                  "required": [
+                    "addr",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Function rename operations"
+            },
+            "data": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "old": {
+                        "type": "string",
+                        "description": "Current variable name"
+                      },
+                      "new": {
+                        "type": "string",
+                        "description": "New variable name"
+                      }
+                    },
+                    "required": [
+                      "old",
+                      "new"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "old": {
+                      "type": "string",
+                      "description": "Current variable name"
+                    },
+                    "new": {
+                      "type": "string",
+                      "description": "New variable name"
+                    }
+                  },
+                  "required": [
+                    "old",
+                    "new"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Global/data variable rename operations"
+            },
+            "local": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "func_addr": {
+                        "type": "string",
+                        "description": "Function address containing the local variable"
+                      },
+                      "old": {
+                        "type": "string",
+                        "description": "Current variable name"
+                      },
+                      "new": {
+                        "type": "string",
+                        "description": "New variable name"
+                      }
+                    },
+                    "required": [
+                      "func_addr",
+                      "old",
+                      "new"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "func_addr": {
+                      "type": "string",
+                      "description": "Function address containing the local variable"
+                    },
+                    "old": {
+                      "type": "string",
+                      "description": "Current variable name"
+                    },
+                    "new": {
+                      "type": "string",
+                      "description": "New variable name"
+                    }
+                  },
+                  "required": [
+                    "func_addr",
+                    "old",
+                    "new"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Local variable rename operations"
+            },
+            "stack": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "func_addr": {
+                        "type": "string",
+                        "description": "Function address containing the stack variable"
+                      },
+                      "old": {
+                        "type": "string",
+                        "description": "Current variable name"
+                      },
+                      "new": {
+                        "type": "string",
+                        "description": "New variable name"
+                      }
+                    },
+                    "required": [
+                      "func_addr",
+                      "old",
+                      "new"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "func_addr": {
+                      "type": "string",
+                      "description": "Function address containing the stack variable"
+                    },
+                    "old": {
+                      "type": "string",
+                      "description": "Current variable name"
+                    },
+                    "new": {
+                      "type": "string",
+                      "description": "New variable name"
+                    }
+                  },
+                  "required": [
+                    "func_addr",
+                    "old",
+                    "new"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Stack variable rename operations"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "batch"
+      ]
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "stack_frame",
+    "description": "Get stack vars",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "addrs": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Address(es)"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "addrs"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "declare_stack",
+    "description": "Create stack vars",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string",
+                    "description": "Function address"
+                  },
+                  "offset": {
+                    "type": "string",
+                    "description": "Stack offset"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Variable name"
+                  },
+                  "ty": {
+                    "type": "string",
+                    "description": "Type name"
+                  }
+                },
+                "required": [
+                  "addr",
+                  "offset",
+                  "name",
+                  "ty"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "addr": {
+                  "type": "string",
+                  "description": "Function address"
+                },
+                "offset": {
+                  "type": "string",
+                  "description": "Stack offset"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Variable name"
+                },
+                "ty": {
+                  "type": "string",
+                  "description": "Type name"
+                }
+              },
+              "required": [
+                "addr",
+                "offset",
+                "name",
+                "ty"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "items"
+      ]
+    }
+  },
+  {
+    "name": "delete_stack",
+    "description": "Delete stack vars",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string",
+                    "description": "Function address"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Variable name"
+                  }
+                },
+                "required": [
+                  "addr",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "addr": {
+                  "type": "string",
+                  "description": "Function address"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Variable name"
+                }
+              },
+              "required": [
+                "addr",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "items"
+      ]
+    }
+  },
+  {
+    "name": "py_eval",
+    "description": "Execute Python code in IDA context.\n    Returns dict with result/stdout/stderr.\n    Has access to all IDA API modules.\n    Supports Jupyter-style evaluation.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Python code"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Target IDA instance ID (defaults to active instance)"
+        }
+      },
+      "required": [
+        "code"
+      ]
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  }
+]

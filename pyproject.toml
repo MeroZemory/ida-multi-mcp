@@ -19,4 +19,4 @@ where = ["src"]
 include = ["ida_multi_mcp*"]
 
 [tool.setuptools.package-data]
-ida_multi_mcp = ["vendor/**/*"]
+ida_multi_mcp = ["vendor/**/*", "ida_tool_schemas.json"]

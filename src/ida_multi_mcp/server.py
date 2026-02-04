@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import json
+from pathlib import Path
 from typing import Any
 
 from .vendor.zeromcp import McpServer
@@ -15,6 +16,24 @@ from .router import InstanceRouter
 from .health import cleanup_stale_instances, rediscover_instances
 from .tools import management
 from .cache import get_cache, DEFAULT_MAX_OUTPUT_CHARS
+
+# Static IDA tool schemas (loaded once at import time)
+_STATIC_IDA_TOOLS_PATH = Path(__file__).parent / "ida_tool_schemas.json"
+_STATIC_IDA_TOOLS: list[dict] | None = None
+
+
+def _load_static_ida_tools() -> list[dict]:
+    """Load static IDA tool schemas from bundled JSON file."""
+    global _STATIC_IDA_TOOLS
+    if _STATIC_IDA_TOOLS is None:
+        try:
+            with open(_STATIC_IDA_TOOLS_PATH, "r") as f:
+                _STATIC_IDA_TOOLS = json.load(f)
+        except Exception as e:
+            print(f"[ida-multi-mcp] Warning: failed to load static tool schemas: {e}",
+                  file=sys.stderr)
+            _STATIC_IDA_TOOLS = []
+    return _STATIC_IDA_TOOLS
 
 
 class IdaMultiMcpServer:
@@ -125,13 +144,13 @@ class IdaMultiMcpServer:
 
         # Override tools/list to return cached tools
 
-        def custom_tools_list(_meta: dict | None = None) -> dict:
+        def custom_tools_list(cursor: str | None = None, _meta: dict | None = None) -> dict:
             """List all available tools (management + IDA tools)."""
             # Ensure tool cache is fresh
             if not self._cache_valid:
                 self._refresh_tools()
 
-            # Return all cached tools
+            # Return all cached tools (cursor ignored - no pagination needed)
             return {"tools": list(self._tool_cache.values())}
 
         self.server.registry.methods["tools/list"] = custom_tools_list
@@ -204,6 +223,27 @@ class IdaMultiMcpServer:
 
             # IDA tools (proxied)
             else:
+                # Check if any IDA instance is available before proxying
+                active = self.registry.get_active()
+                if not active:
+                    # Try auto-discovery before giving up
+                    discovered = rediscover_instances(self.registry)
+                    if discovered:
+                        active = self.registry.get_active()
+                if not active:
+                    return {
+                        "content": [{"type": "text", "text": (
+                            f"Error: No IDA Pro instance is connected. "
+                            f"Cannot execute tool '{name}'.\n\n"
+                            f"To fix this:\n"
+                            f"1. Open IDA Pro and load a binary\n"
+                            f"2. Press Ctrl+M (or start the MCP plugin manually)\n"
+                            f"3. The plugin will auto-register with this server\n"
+                            f"4. Use 'list_instances' to verify the connection"
+                        )}],
+                        "isError": True,
+                    }
+
                 # Extract max_output_chars if provided (0 = unlimited)
                 max_output = arguments.pop("max_output_chars", DEFAULT_MAX_OUTPUT_CHARS)
 
@@ -562,7 +602,29 @@ class IdaMultiMcpServer:
             "Long-running operations will block ALL subsequent requests and make IDA unresponsive."
         )
 
-        # Discover IDA tools from active instance (rediscover if needed)
+        # Always load static IDA tool schemas so tools are visible even
+        # when no IDA instance is connected.
+        for tool_schema in _load_static_ida_tools():
+            schema = tool_schema.copy()
+            # Append warnings to specific tool descriptions
+            if schema["name"] == "py_eval":
+                schema["description"] = (
+                    schema.get("description", "") +
+                    _SINGLE_THREAD_WARNING +
+                    " Do NOT iterate all functions, bulk decompile, or run heavy loops. "
+                    "Use decompile_to_file for batch decompilation instead."
+                )
+            elif schema["name"] == "list_funcs":
+                schema["description"] = (
+                    schema.get("description", "") +
+                    _SINGLE_THREAD_WARNING +
+                    " For large binaries (100K+ functions), use count/offset pagination. "
+                    "Avoid count=0 (all) with glob filters on large binaries."
+                )
+            self._tool_cache[schema["name"]] = schema
+
+        # If an IDA instance is connected, overlay with live-discovered schemas
+        # (they may have additional tools from extensions/plugins).
         active_id = self.registry.get_active()
         if not active_id:
             # Try auto-discovery in case IDA started after the proxy
@@ -607,6 +669,17 @@ class IdaMultiMcpServer:
                         )
 
                     self._tool_cache[tool["name"]] = tool_schema
+
+        # MCP spec requires outputSchema.type == "object".
+        # Wrap any non-object outputSchema so clients don't reject the tool list.
+        for tool_schema in self._tool_cache.values():
+            os = tool_schema.get("outputSchema")
+            if os and os.get("type") != "object":
+                tool_schema["outputSchema"] = {
+                    "type": "object",
+                    "properties": {"result": os},
+                    "required": ["result"],
+                }
 
         self._cache_valid = True
         return len(self._tool_cache)
