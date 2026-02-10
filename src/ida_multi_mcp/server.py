@@ -665,11 +665,14 @@ class IdaMultiMcpServer:
 
                 self._tool_cache[tool_schema["name"]] = tool_schema
 
-        # MCP spec requires outputSchema.type == "object".
-        # Wrap any non-object outputSchema so clients don't reject the tool list.
+        # MCP spec expects outputSchema to be an object schema.
+        # Some clients validate all advertised tools; keep schemas conservative.
         for tool_schema in self._tool_cache.values():
             os = tool_schema.get("outputSchema")
-            if os and os.get("type") != "object":
+            if not os:
+                tool_schema["outputSchema"] = {"type": "object"}
+                continue
+            if os.get("type") != "object":
                 tool_schema["outputSchema"] = {
                     "type": "object",
                     "properties": {"result": os},
