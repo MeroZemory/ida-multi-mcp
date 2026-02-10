@@ -10,7 +10,6 @@ sys.path.insert(0, str(SRC_ROOT))
 
 class _DummyRegistry:
     def __init__(self):
-        self._active = "siod"
         self._instances = {
             "siod": {
                 "binary_name": "iMax.exe",
@@ -25,9 +24,6 @@ class _DummyRegistry:
 
     def list_instances(self):
         return dict(self._instances)
-
-    def get_active(self):
-        return self._active
 
 
 class TestListInstancesStructuredContent(unittest.TestCase):

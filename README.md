@@ -208,7 +208,7 @@ Output:
 ```
 Registered IDA instances (3):
 
-  k7m2 [ACTIVE]
+  k7m2
     Binary: malware.exe
     Path: C:/samples/malware.exe
     Arch: x86_64
@@ -232,39 +232,33 @@ Registered IDA instances (3):
 
 ### Using in Your LLM
 
-Once connected, all 71+ IDA tools are available. Use the `instance_id` parameter to target a specific instance:
+Once connected, all 71+ IDA tools are available. **All IDA tool calls require** the `instance_id` parameter to avoid cross-agent contention.
 
 **Analyzing a single instance:**
 ```
-Decompile the main function in malware.exe
+Decompile the main function in malware.exe (k7m2)
 ```
-This uses the active instance.
 
 **Cross-binary analysis:**
 ```
 Decompile main in malware.exe (k7m2) and compare it with the entry point in dropper.dll (px3a)
 ```
 
-**Switching active instance:**
-```
-Set px3a as the active instance, then list all functions
-```
-
 ## Management Tools
 
-The server provides 4 built-in management tools:
+The server provides built-in management tools:
 
 ### list_instances()
 Lists all registered IDA instances with metadata (binary name, path, architecture, port).
 
-### get_active_instance()
-Returns the currently active instance (used when `instance_id` is not specified).
-
-### set_active_instance(instance_id: str)
-Sets the active instance for subsequent tool calls.
-
 ### refresh_tools()
-Re-discovers tools from the active IDA instance. Use this if you update the IDA plugin.
+Re-discovers tools from IDA instances. Use this if you update the IDA plugin.
+
+### get_cached_output(cache_id: str, offset: int = 0, size: int = 20000)
+Retrieve cached output from a previous tool call that was truncated.
+
+### decompile_to_file(...)
+Decompile functions and save results directly to files on disk. Requires `instance_id`.
 
 ## Instance IDs Explained
 
@@ -350,12 +344,10 @@ Each registered instance includes:
 
 ### Request Routing
 
-1. MCP client calls a tool (e.g., `decompile`) with optional `instance_id` parameter
+1. MCP client calls a tool (e.g., `decompile`) with required `instance_id` parameter
 2. Server routes to the target instance via HTTP JSON-RPC
 3. IDA instance processes the request
 4. Result returned to client
-
-If `instance_id` is not specified, the active instance is used.
 
 ### Health Monitoring
 

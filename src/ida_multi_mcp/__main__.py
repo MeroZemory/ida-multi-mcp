@@ -758,7 +758,6 @@ def cmd_list(args):
     """List all registered IDA instances."""
     registry = InstanceRegistry(args.registry)
     instances = registry.list_instances()
-    active = registry.get_active()
 
     if not instances:
         print("No IDA instances registered.")
@@ -767,8 +766,7 @@ def cmd_list(args):
 
     print(f"Registered IDA instances ({len(instances)}):\n")
     for instance_id, info in instances.items():
-        active_marker = " [ACTIVE]" if instance_id == active else ""
-        print(f"  {instance_id}{active_marker}")
+        print(f"  {instance_id}")
         print(f"    Binary: {info.get('binary_name', 'unknown')}")
         print(f"    Path: {info.get('binary_path', 'unknown')}")
         print(f"    Arch: {info.get('arch', 'unknown')}")

@@ -278,7 +278,7 @@ def rediscover_instances(registry: "InstanceRegistry") -> list[str]:
     pings each to confirm it's an MCP server, queries metadata, and
     registers any that aren't already in the registry.
 
-    Called on proxy startup when the registry has no active instances.
+    Called on proxy startup when the registry has no registered instances.
 
     Args:
         registry: The instance registry

@@ -576,7 +576,9 @@ IDA Hook이 실패하더라도, Router가 매 요청마다 바이너리 경로�
 
 class InstanceRouter:
     def route_request(self, method, arguments):
-        instance_id = arguments.pop("instance_id", None) or self.registry.get_active()
+        instance_id = arguments.pop("instance_id", None)
+        if not instance_id:
+            return {"error": "Missing required parameter 'instance_id'."}
         instance = self.registry.get_instance(instance_id)
         if not instance:
             return self._handle_missing(instance_id)
@@ -657,7 +659,7 @@ IDA 종료
    {
      "name": "instance_id",
      "type": "string",
-     "description": "Target IDA instance ID (default: active instance)"
+     "description": "Target IDA instance ID (required)"
    }
 6. Management tools 추가 (list_instances, get_active, set_active, refresh_tools)
 7. 수정된 tool 목록을 MCP 클라이언트에 제공
@@ -675,8 +677,8 @@ class InstanceRouter:
     def route_request(self, method: str, arguments: dict) -> dict:
         # 1. instance_id 추출 (없으면 active_instance 사용)
         instance_id = arguments.pop("instance_id", None)
-        if instance_id is None:
-            instance_id = self.registry.get_active()
+        if not instance_id:
+            return {"error": "Missing required parameter 'instance_id'."}
 
         # 2. 대상 인스턴스의 host:port 조회
         instance = self.registry.get_instance(instance_id)
@@ -719,20 +721,8 @@ def list_instances() -> list[dict]:
     return [{"id": id, **info} for id, info in registry.list_instances().items()]
 
 @tool
-def get_active_instance() -> dict:
-    """Get the currently active IDA Pro instance"""
-    active_id = registry.get_active()
-    return {"id": active_id, **registry.get_instance(active_id)}
-
-@tool
-def set_active_instance(instance_id: Annotated[str, "Instance ID to activate"]) -> dict:
-    """Set the active IDA Pro instance for subsequent tool calls"""
-    registry.set_active(instance_id)
-    return {"active": instance_id}
-
-@tool
 def refresh_tools() -> dict:
-    """Re-discover tools from the active IDA Pro instance"""
+    """Re-discover tools from IDA Pro instances"""
     # tools/list를 다시 가져와서 캐시 갱신
     return {"tools_count": len(refreshed_tools)}
 ```
@@ -776,7 +766,7 @@ def is_process_alive(pid: int) -> bool:
 | **만료된 인스턴스 (바이너리 교체)** | `"Instance 'a3f' expired. Previous: malware.exe. Replaced by 'd7e' (driver.sys)."` |
 | **만료된 인스턴스 (IDA 종료)** | `"Instance 'a3f' expired. Previous: malware.exe. Reason: ida_closed."` |
 | 인스턴스 연결 실패 | `"Failed to connect to instance '{id}' at {host}:{port}. Instance may have crashed."` |
-| 모든 인스턴스 죽음 | `"No active IDA Pro instances. Please open IDA Pro with the multi-MCP plugin installed."` |
+| 모든 인스턴스 죽음 | `"No IDA Pro instances found. Please open IDA Pro with the multi-MCP plugin installed."` |
 | Registry 손상 | 자동 재빌드 (running 프로세스 스캔) |
 
 ### 3.7 CLI 인터페이스
@@ -823,7 +813,7 @@ ida-multi-mcp --config
 | 2.1 | Router 모듈 (instance_id → HTTP dispatch) | `router.py` |
 | 2.2 | Dynamic Tool Discovery (tools/list 쿼리 + instance_id 주입) | `server.py` |
 | 2.3 | MCP Server (stdio/HTTP, tools/call 라우팅) | `server.py` |
-| 2.4 | Management Tools (list/get/set active, refresh) | `tools/management.py` |
+| 2.4 | Management Tools (list, refresh) | `tools/management.py` |
 | 2.5 | CLI 엔트리 포인트 (serve, list, install, config) | `__main__.py` |
 
 ### Phase 3: Health — 안정성 + 에러 처리

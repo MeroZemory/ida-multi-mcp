@@ -170,20 +170,16 @@ class IdaMultiMcpServer:
                     "isError": False
                 }
 
-            elif name == "get_active_instance":
-                result = management.get_active_instance()
-                return {
-                    "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
-                    "structuredContent": result,
-                    "isError": False
+            elif name in ("get_active_instance", "set_active_instance"):
+                # Deprecated/removed: this server requires explicit instance_id on every tool call.
+                result = {
+                    "error": f"Tool '{name}' has been removed.",
+                    "hint": "Call list_instances() and pass instance_id explicitly on every IDA tool call.",
                 }
-
-            elif name == "set_active_instance":
-                result = management.set_active_instance(arguments.get("instance_id", ""))
                 return {
                     "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
                     "structuredContent": result,
-                    "isError": False
+                    "isError": True
                 }
 
             elif name == "refresh_tools":
@@ -294,7 +290,7 @@ class IdaMultiMcpServer:
                 if max_output > 0 and total_chars > max_output:
                     # Cache full response text for humans (get_cached_output)
                     cache = get_cache()
-                    instance_id = arguments.get("instance_id") or self.registry.get_active()
+                    instance_id = arguments.get("instance_id") or "unknown"
                     cache_id = cache.store(structured_text, tool_name=name, instance_id=instance_id)
 
                     preview_structured = _schema_preserving_preview(structured, max_output)
@@ -331,6 +327,11 @@ class IdaMultiMcpServer:
         output_dir = arguments.get("output_dir", ".")
         mode = arguments.get("mode", "single")
         instance_id = arguments.get("instance_id")
+        if not instance_id:
+            return {
+                "error": "Missing required parameter 'instance_id'.",
+                "hint": "Call list_instances() and pass instance_id explicitly.",
+            }
 
         # addr → name mapping (populated by list_funcs when using 'all')
         addr_names: dict[str, str] = {}
@@ -345,7 +346,7 @@ class IdaMultiMcpServer:
                     "name": "list_funcs",
                     "arguments": {
                         "queries": json.dumps({"count": page_size, "offset": offset}),
-                        **({"instance_id": instance_id} if instance_id else {})
+                        "instance_id": instance_id,
                     }
                 })
                 if "error" in list_result:
@@ -394,7 +395,7 @@ class IdaMultiMcpServer:
                 "name": "decompile",
                 "arguments": {
                     "addr": addr,
-                    **({"instance_id": instance_id} if instance_id else {})
+                    "instance_id": instance_id,
                 }
             })
             # Router returns {"content": [{"text": "{\"addr\":...,\"code\":...}"}]}
@@ -473,13 +474,6 @@ class IdaMultiMcpServer:
             "outputSchema": {
                 "type": "object",
                 "properties": {
-                    "active": {
-                        "oneOf": [
-                            {"type": "string"},
-                            {"type": "null"}
-                        ],
-                        "description": "Currently active instance id (or null if none)"
-                    },
                     "count": {"type": "integer"},
                     "instances": {
                         "type": "array",
@@ -487,7 +481,6 @@ class IdaMultiMcpServer:
                             "type": "object",
                             "properties": {
                                 "id": {"type": "string"},
-                                "active": {"type": "boolean"},
                                 "binary_name": {"type": "string"},
                                 "binary_path": {"type": "string"},
                                 "arch": {"type": "string"},
@@ -496,36 +489,11 @@ class IdaMultiMcpServer:
                                 "pid": {"type": "integer"},
                                 "registered_at": {"type": "string"}
                             },
-                            "required": ["id", "active", "binary_name", "binary_path", "arch", "host", "port", "pid", "registered_at"]
+                            "required": ["id", "binary_name", "binary_path", "arch", "host", "port", "pid", "registered_at"]
                         }
                     }
                 },
-                "required": ["active", "count", "instances"]
-            }
-        }
-
-        self._tool_cache["get_active_instance"] = {
-            "name": "get_active_instance",
-            "description": "Get the currently active IDA Pro instance.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-
-        self._tool_cache["set_active_instance"] = {
-            "name": "set_active_instance",
-            "description": "Set the active IDA Pro instance for subsequent tool calls.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "instance_id": {
-                        "type": "string",
-                        "description": "Instance ID to set as active (e.g., 'k7m2')"
-                    }
-                },
-                "required": ["instance_id"]
+                "required": ["count", "instances"]
             }
         }
 
@@ -590,10 +558,10 @@ class IdaMultiMcpServer:
                     },
                     "instance_id": {
                         "type": "string",
-                        "description": "Target IDA instance ID (defaults to active instance)"
+                        "description": "Target IDA instance ID (required)"
                     }
                 },
-                "required": ["output_dir"]
+                "required": ["output_dir", "instance_id"]
             }
         }
 
@@ -606,69 +574,96 @@ class IdaMultiMcpServer:
         # when no IDA instance is connected.
         for tool_schema in _load_static_ida_tools():
             schema = tool_schema.copy()
+
+            # Require explicit instance_id for all IDA tools (avoid global active instance contention).
+            input_schema = schema.get("inputSchema", {}) or {}
+            properties = input_schema.get("properties", {}) or {}
+            required = input_schema.get("required", []) or []
+            properties["instance_id"] = {
+                "type": "string",
+                "description": "Target IDA instance ID (required)"
+            }
+            if "instance_id" not in required:
+                required.append("instance_id")
+            input_schema["properties"] = properties
+            input_schema["required"] = required
+            schema["inputSchema"] = input_schema
+
             # Append warnings to specific tool descriptions
-            if schema["name"] == "py_eval":
+            if schema.get("name") == "py_eval":
                 schema["description"] = (
                     schema.get("description", "") +
                     _SINGLE_THREAD_WARNING +
                     " Do NOT iterate all functions, bulk decompile, or run heavy loops. "
                     "Use decompile_to_file for batch decompilation instead."
                 )
-            elif schema["name"] == "list_funcs":
+            elif schema.get("name") == "list_funcs":
                 schema["description"] = (
                     schema.get("description", "") +
                     _SINGLE_THREAD_WARNING +
                     " For large binaries (100K+ functions), use count/offset pagination. "
                     "Avoid count=0 (all) with glob filters on large binaries."
                 )
+
             self._tool_cache[schema["name"]] = schema
 
-        # If an IDA instance is connected, overlay with live-discovered schemas
-        # (they may have additional tools from extensions/plugins).
-        active_id = self.registry.get_active()
-        if not active_id:
-            # Try auto-discovery in case IDA started after the proxy
+        # Discover IDA tools from any available instance (rediscover if needed).
+        instances = self.registry.list_instances()
+        if not instances:
             discovered = rediscover_instances(self.registry)
             if discovered:
-                print(f"[ida-multi-mcp] Auto-discovered {len(discovered)} IDA instance(s) during refresh",
-                      file=sys.stderr)
-                active_id = self.registry.get_active()
-        if active_id:
-            instance_info = self.registry.get_instance(active_id)
-            if instance_info:
+                print(
+                    f"[ida-multi-mcp] Auto-discovered {len(discovered)} IDA instance(s) during refresh",
+                    file=sys.stderr,
+                )
+            instances = self.registry.list_instances()
+
+        if instances:
+            # Copy tool schemas from the first responsive instance. Routing always requires instance_id.
+            ida_tools: list[dict] = []
+            for candidate_id in sorted(instances.keys()):
+                instance_info = self.registry.get_instance(candidate_id)
+                if not instance_info:
+                    continue
                 ida_tools = self._discover_ida_tools(instance_info)
-                for tool in ida_tools:
-                    # Inject instance_id parameter
-                    tool_schema = tool.copy()
-                    input_schema = tool_schema.get("inputSchema", {})
-                    properties = input_schema.get("properties", {})
+                if ida_tools:
+                    break
 
-                    # Add instance_id parameter (optional)
-                    properties["instance_id"] = {
-                        "type": "string",
-                        "description": "Target IDA instance ID (defaults to active instance)"
-                    }
+            for tool in ida_tools:
+                tool_schema = tool.copy()
+                input_schema = tool_schema.get("inputSchema", {}) or {}
+                properties = input_schema.get("properties", {}) or {}
+                required = input_schema.get("required", []) or []
 
-                    input_schema["properties"] = properties
-                    tool_schema["inputSchema"] = input_schema
+                # Add instance_id parameter (required)
+                properties["instance_id"] = {
+                    "type": "string",
+                    "description": "Target IDA instance ID (required)"
+                }
+                if "instance_id" not in required:
+                    required.append("instance_id")
 
-                    # Append warnings to specific tool descriptions
-                    if tool["name"] == "py_eval":
-                        tool_schema["description"] = (
-                            tool_schema.get("description", "") +
-                            _SINGLE_THREAD_WARNING +
-                            " Do NOT iterate all functions, bulk decompile, or run heavy loops. "
-                            "Use decompile_to_file for batch decompilation instead."
-                        )
-                    elif tool["name"] == "list_funcs":
-                        tool_schema["description"] = (
-                            tool_schema.get("description", "") +
-                            _SINGLE_THREAD_WARNING +
-                            " For large binaries (100K+ functions), use count/offset pagination. "
-                            "Avoid count=0 (all) with glob filters on large binaries."
-                        )
+                input_schema["properties"] = properties
+                input_schema["required"] = required
+                tool_schema["inputSchema"] = input_schema
 
-                    self._tool_cache[tool["name"]] = tool_schema
+                # Append warnings to specific tool descriptions
+                if tool.get("name") == "py_eval":
+                    tool_schema["description"] = (
+                        tool_schema.get("description", "") +
+                        _SINGLE_THREAD_WARNING +
+                        " Do NOT iterate all functions, bulk decompile, or run heavy loops. "
+                        "Use decompile_to_file for batch decompilation instead."
+                    )
+                elif tool.get("name") == "list_funcs":
+                    tool_schema["description"] = (
+                        tool_schema.get("description", "") +
+                        _SINGLE_THREAD_WARNING +
+                        " For large binaries (100K+ functions), use count/offset pagination. "
+                        "Avoid count=0 (all) with glob filters on large binaries."
+                    )
+
+                self._tool_cache[tool_schema["name"]] = tool_schema
 
         # MCP spec requires outputSchema.type == "object".
         # Wrap any non-object outputSchema so clients don't reject the tool list.

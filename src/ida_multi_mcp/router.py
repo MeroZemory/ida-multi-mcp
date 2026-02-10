@@ -41,14 +41,17 @@ class InstanceRouter:
         # Extract instance_id from params
         instance_id = params.get("arguments", {}).get("instance_id")
 
-        # Fall back to active instance if not specified
-        if instance_id is None:
-            instance_id = self.registry.get_active()
-            if instance_id is None:
-                return {
-                    "error": "No active instance. Use set_active_instance() or specify instance_id.",
-                    "available_instances": list(self.registry.list_instances().keys())
-                }
+        # Require explicit instance_id to avoid cross-agent contention on shared registries.
+        if not instance_id:
+            instances = self.registry.list_instances()
+            return {
+                "error": "Missing required parameter 'instance_id'.",
+                "hint": "Call list_instances() and pass instance_id explicitly for every IDA tool call.",
+                "available_instances": [
+                    {"id": id, "binary_name": info.get("binary_name", "unknown")}
+                    for id, info in instances.items()
+                ],
+            }
 
         # Get instance info
         instance_info = self.registry.get_instance(instance_id)
@@ -188,7 +191,7 @@ class InstanceRouter:
                     {"id": id, "binary_name": info.get("binary_name")}
                     for id, info in replacements
                 ],
-                "hint": f"Use set_active_instance('{replacements[0][0]}') to switch."
+                "hint": f"Use instance_id='{replacements[0][0]}' for subsequent calls."
             }
         else:
             return {
