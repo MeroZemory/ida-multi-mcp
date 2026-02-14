@@ -84,6 +84,24 @@ If IDA is installed in a custom location:
 ida-multi-mcp --install --ida-dir "C:/Program Files/IDA Pro 9.0"
 ```
 
+If Codex fails to start with a TOML parse error from `%USERPROFILE%\.codex\config.toml`, fix Windows paths as literal TOML strings/keys.
+
+Use this form (safe):
+```toml
+[projects.'\\?\C:\Git\MeroZemory\tidy-up']
+trust_level = "trusted"
+
+[mcp_servers.ida-multi-mcp]
+command = 'C:\Users\MeroZemory\AppData\Local\Programs\Python\Python311\python.exe'
+args = ["-m", "ida_multi_mcp"]
+```
+
+Avoid this form (invalid in TOML):
+```toml
+[projects.\\?\C:\Git\MeroZemory\tidy-up]  # invalid unquoted key
+command = "C:\Users\...\python.exe"       # backslashes parsed as escapes
+```
+
 ### Linux
 
 ```bash

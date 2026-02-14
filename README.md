@@ -96,6 +96,7 @@ ida-multi-mcp --install
 ```
 
 > If IDA uses a different Python version than your default, use `py -3.12` (replace with IDA's version) instead of `python`.
+> If you manually edit `%USERPROFILE%\\.codex\\config.toml`, use literal TOML quoting for Windows paths (e.g., `[projects.'\\?\\C:\\path\\to\\repo']`, `command = 'C:\\...\\python.exe'`).
 
 #### Linux
 
@@ -439,6 +440,23 @@ If your MCP client shows `Status: failed` for ida-multi-mcp, the registered comm
    ```
 
 3. Restart the MCP client
+
+### Codex fails to start on Windows with TOML parse error
+
+If Codex prints an error like `invalid unquoted key` for `%USERPROFILE%\.codex\config.toml`, the config contains Windows paths that are not valid TOML syntax.
+
+Use literal quoted keys/strings for Windows paths:
+
+```toml
+[projects.'\\?\C:\Git\MeroZemory\tidy-up']
+trust_level = "trusted"
+
+[mcp_servers.ida-multi-mcp]
+command = 'C:\Users\MeroZemory\AppData\Local\Programs\Python\Python311\python.exe'
+args = ["-m", "ida_multi_mcp"]
+```
+
+Do not use unquoted `\\?\...` project table keys, and do not use double-quoted Windows paths unless backslashes are escaped.
 
 ## Design Decisions
 
