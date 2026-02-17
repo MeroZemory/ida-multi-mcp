@@ -811,6 +811,7 @@ def cmd_install(args):
     except ImportError:
         print("  [!!] ida-multi-mcp package not found in Python path")
         print("       Install with: pip install ida-multi-mcp")
+        return 1
 
     # 2. Install IDA plugin loader
     ida_plugins_dir = _get_ida_plugins_dir(args.ida_dir)
@@ -846,6 +847,7 @@ def cmd_install(args):
     print("  2. Open IDA Pro - the plugin auto-loads (PLUGIN_FIX)")
     print("  3. Run 'ida-multi-mcp --list' to verify instances")
     print("=" * 60)
+    return 0
 
 
 def cmd_uninstall(args):
@@ -873,11 +875,13 @@ def cmd_uninstall(args):
     install_mcp_servers(uninstall=True)
 
     print("\n  [ok] ida-multi-mcp uninstalled!")
+    return 0
 
 
 def cmd_config(args):
     """Print MCP client configuration JSON."""
     print_mcp_config()
+    return 0
 
 
 def main():
@@ -913,13 +917,14 @@ def main():
     args = parser.parse_args()
 
     if args.install:
-        cmd_install(args)
+        sys.exit(cmd_install(args))
     elif args.uninstall:
-        cmd_uninstall(args)
+        sys.exit(cmd_uninstall(args))
     elif args.list:
         cmd_list(args)
+        return
     elif args.config:
-        cmd_config(args)
+        sys.exit(cmd_config(args))
     else:
         # Default: start MCP server
         serve(registry_path=args.registry)

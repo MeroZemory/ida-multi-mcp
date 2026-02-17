@@ -5,8 +5,6 @@ Handles instance registration with the central registry.
 
 import os
 import sys
-import json
-import http.client
 from pathlib import Path
 
 
@@ -25,16 +23,14 @@ def register_instance(pid: int, port: int, idb_path: str, **metadata) -> str:
         Generated instance ID
     """
     # Import here to avoid circular dependencies
-    registry_path = str(Path.home() / ".ida-mcp" / "instances.json")
-
     # We need to add parent directory to path to import from ida_multi_mcp
     parent_dir = str(Path(__file__).parent.parent.parent)
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
 
-    from ida_multi_mcp.registry import InstanceRegistry
+    from ida_multi_mcp.registry import InstanceRegistry, get_default_registry_path
 
-    registry = InstanceRegistry(registry_path)
+    registry = InstanceRegistry(get_default_registry_path())
     instance_id = registry.register(pid, port, idb_path, **metadata)
 
     print(f"[ida-multi-mcp] Registered as instance '{instance_id}'")
@@ -47,15 +43,13 @@ def unregister_instance(instance_id: str) -> None:
     Args:
         instance_id: Instance ID to unregister
     """
-    registry_path = str(Path.home() / ".ida-mcp" / "instances.json")
-
     parent_dir = str(Path(__file__).parent.parent.parent)
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
 
-    from ida_multi_mcp.registry import InstanceRegistry
+    from ida_multi_mcp.registry import InstanceRegistry, get_default_registry_path
 
-    registry = InstanceRegistry(registry_path)
+    registry = InstanceRegistry(get_default_registry_path())
     success = registry.unregister(instance_id)
 
     if success:
@@ -70,15 +64,13 @@ def update_heartbeat(instance_id: str) -> None:
     Args:
         instance_id: Instance ID
     """
-    registry_path = str(Path.home() / ".ida-mcp" / "instances.json")
-
     parent_dir = str(Path(__file__).parent.parent.parent)
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
 
-    from ida_multi_mcp.registry import InstanceRegistry
+    from ida_multi_mcp.registry import InstanceRegistry, get_default_registry_path
 
-    registry = InstanceRegistry(registry_path)
+    registry = InstanceRegistry(get_default_registry_path())
     registry.update_heartbeat(instance_id)
 
 

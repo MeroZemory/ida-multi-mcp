@@ -431,7 +431,9 @@ class IdaMultiMcpServer:
                 if code:
                     name = addr_names.get(addr) or decomp.get("name") or addr
                     safe_name = re.sub(r'[<>:"/\\|?*]', "_", name)
-                    filename = f"{safe_name}.c"
+                    # Include address to avoid collisions across duplicate function names.
+                    addr_suffix = re.sub(r"[^0-9A-Fa-fx]", "_", str(addr))
+                    filename = f"{safe_name}_{addr_suffix}.c"
                     filepath = os.path.join(output_dir, filename)
                     with open(filepath, "w", encoding="utf-8") as f:
                         f.write(f"// {name} @ {addr}\n")

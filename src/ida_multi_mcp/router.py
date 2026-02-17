@@ -183,10 +183,11 @@ class InstanceRouter:
             if info.get("binary_name") == binary_name
         ]
 
+        reason = expired_info.get("reason", expired_info.get("expire_reason", "unknown"))
         if replacements:
             return {
                 "error": f"Instance '{instance_id}' expired at {expired_info.get('expired_at')}",
-                "reason": expired_info.get("expire_reason", "unknown"),
+                "reason": reason,
                 "replacements": [
                     {"id": id, "binary_name": info.get("binary_name")}
                     for id, info in replacements
@@ -196,7 +197,7 @@ class InstanceRouter:
         else:
             return {
                 "error": f"Instance '{instance_id}' expired and no replacement found.",
-                "reason": expired_info.get("expire_reason", "unknown"),
+                "reason": reason,
                 "available_instances": list(instances.keys())
             }
 

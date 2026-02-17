@@ -13,6 +13,21 @@ from typing import Any
 from .filelock import FileLock
 from .instance_id import generate_instance_id, resolve_collision
 
+REGISTRY_PATH_ENV = "IDA_MULTI_MCP_REGISTRY_PATH"
+
+
+def get_default_registry_path() -> str:
+    """Resolve default registry path.
+
+    Resolution order:
+    1. IDA_MULTI_MCP_REGISTRY_PATH environment variable
+    2. ~/.ida-mcp/instances.json
+    """
+    override = os.environ.get(REGISTRY_PATH_ENV, "").strip()
+    if override:
+        return override
+    return str(Path.home() / ".ida-mcp" / "instances.json")
+
 
 class InstanceRegistry:
     """Thread-safe registry of IDA Pro instances.
@@ -28,7 +43,7 @@ class InstanceRegistry:
             registry_path: Path to registry JSON file (default: ~/.ida-mcp/instances.json)
         """
         if registry_path is None:
-            registry_path = str(Path.home() / ".ida-mcp" / "instances.json")
+            registry_path = get_default_registry_path()
 
         self.registry_path = registry_path
         self.lock_path = registry_path + ".lock"
@@ -62,8 +77,25 @@ class InstanceRegistry:
         if not os.path.exists(self.registry_path):
             return {"instances": {}, "active_instance": None, "expired": {}}
 
-        with open(self.registry_path, 'r') as f:
-            return json.load(f)
+        try:
+            with open(self.registry_path, "r") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError("Registry root must be an object")
+        except Exception:
+            # Quarantine corrupted file and recover with empty registry.
+            corrupt_path = self.registry_path + f".corrupt-{int(time.time())}"
+            try:
+                os.replace(self.registry_path, corrupt_path)
+            except Exception:
+                pass
+            return {"instances": {}, "active_instance": None, "expired": {}}
+
+        # Normalize missing keys from older schema variants.
+        data.setdefault("instances", {})
+        data.setdefault("active_instance", None)
+        data.setdefault("expired", {})
+        return data
 
     def _save(self, data: dict[str, Any]) -> None:
         """Save registry data to disk atomically (assumes lock held)."""
