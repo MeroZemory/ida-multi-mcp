@@ -20,6 +20,62 @@ The plugin loader automatically searches common installation paths (pip --user, 
 
 ## Installation
 
+## Agent Execution Contract (for AI tools)
+
+When an AI agent follows this guide, it should execute the workflow in this exact order:
+1. Run **Pre-flight Auto-Diagnostics** and fix blocking issues.
+2. Run platform-specific **Installation** steps.
+3. Run **Post-flight Auto-Diagnostics**.
+4. If any check fails, run **Auto-Remediation Playbook**, then re-run post-flight checks.
+5. Do not report success until all required checks pass.
+
+## Pre-flight Auto-Diagnostics
+
+Run these checks before installing.
+
+### 1) Python / pip baseline
+
+```bash
+python --version
+python -m pip --version
+```
+
+Pass criteria:
+- Python is `3.11+`
+- `pip` command works for the same interpreter
+
+### 2) CLI availability check (non-blocking)
+
+```bash
+ida-multi-mcp --list
+```
+
+Interpretation:
+- If this fails with command not found, installation is still allowed.
+- If this succeeds, record current state for comparison after install.
+
+### 3) IDA plugin directory write check
+
+macOS/Linux:
+```bash
+test -d ~/.idapro/plugins || mkdir -p ~/.idapro/plugins
+test -w ~/.idapro/plugins && echo "plugins dir writable"
+```
+
+Windows (PowerShell):
+```powershell
+if (!(Test-Path "$env:APPDATA\\Hex-Rays\\IDA Pro\\plugins")) { New-Item -ItemType Directory -Path "$env:APPDATA\\Hex-Rays\\IDA Pro\\plugins" | Out-Null }
+if (Test-Path "$env:APPDATA\\Hex-Rays\\IDA Pro\\plugins") { "plugins dir exists" }
+```
+
+### 4) Optional cleanup of stale installs (recommended)
+
+```bash
+ida-multi-mcp --uninstall
+```
+
+If command is unavailable, continue with install.
+
 ### macOS
 
 **Option A: pipx (recommended for CLI) + pip --user for IDA**
@@ -128,6 +184,77 @@ ida-multi-mcp --config
 2. Check the IDA console for: `[ida-multi-mcp] Registered as instance 'xxxx'`
 3. Run: `ida-multi-mcp --list` to confirm the instance is visible
 4. In your MCP client, try calling `list_instances()` tool
+
+## Post-flight Auto-Diagnostics
+
+Run these checks immediately after installation.
+
+### 1) CLI and module import health
+
+```bash
+ida-multi-mcp --config
+python -c "import ida_multi_mcp; print(ida_multi_mcp.__version__)"
+```
+
+Pass criteria:
+- `--config` prints valid JSON
+- Python import succeeds
+
+### 2) Plugin deployment health
+
+macOS/Linux:
+```bash
+ls -l ~/.idapro/plugins/ida_multi_mcp.py
+```
+
+Windows (PowerShell):
+```powershell
+Get-Item "$env:APPDATA\\Hex-Rays\\IDA Pro\\plugins\\ida_multi_mcp.py"
+```
+
+Pass criteria:
+- loader file exists in IDA plugins directory
+
+### 3) Runtime registration health (requires IDA open with a binary)
+
+```bash
+ida-multi-mcp --list
+```
+
+Pass criteria:
+- at least 1 registered instance appears
+
+### 4) MCP tool-plane health (from AI client)
+
+Required calls:
+1. `list_instances()`
+2. one safe tool with explicit `instance_id` (e.g. `list_funcs` with small pagination)
+
+Pass criteria:
+- both calls succeed without transport/protocol errors
+
+## Auto-Remediation Playbook
+
+If post-flight checks fail, apply fixes in order.
+
+1. Python mismatch suspected:
+   - Re-check IDA console Python version (`import sys; print(sys.version)`).
+   - Reinstall with that exact version (`python3.11 -m pip install ...` or `py -3.12 -m pip install ...`).
+2. Plugin loader missing:
+   - Re-run `ida-multi-mcp --install` (or `--install --ida-dir <IDA_DIR>` for custom installs).
+3. No instances registered:
+   - Restart IDA.
+   - Open any binary.
+   - Confirm IDA output contains registration log.
+   - Re-run `ida-multi-mcp --list`.
+4. MCP client cannot call tools:
+   - Restart the MCP client process.
+   - Re-check client config (`ida-multi-mcp --config`).
+5. Still failing:
+   - Run clean reinstall:
+     - `ida-multi-mcp --uninstall`
+     - uninstall package (`pip uninstall ida-multi-mcp` and/or `pipx uninstall ida-multi-mcp`)
+     - install again from scratch
 
 ## Troubleshooting
 
