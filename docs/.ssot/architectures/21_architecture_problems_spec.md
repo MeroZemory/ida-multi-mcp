@@ -1,5 +1,11 @@
 # 21. Architecture Problems Specification
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## 범위
 - 분석 대상: `ida-multi-mcp` 현재 아키텍처(2026-02-17)
 - 근거 소스: 기존 SSOT 문서 + 실제 코드(`src/ida_multi_mcp/**`) + 테스트(`tests/**`)

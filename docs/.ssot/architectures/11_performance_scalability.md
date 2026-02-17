@@ -1,5 +1,11 @@
 # 11. Performance and Scalability
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## 병목
 - 가장 큰 병목은 IDA 단일 메인 스레드
 - `decompile(all)`은 함수 수에 선형 비례

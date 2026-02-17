@@ -1,5 +1,11 @@
 # 12. CLI and Installation Architecture
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## CLI 표면
 - 기본: MCP 서버 실행
 - `--install`: IDA plugin loader 배치 + MCP client 설정 자동화

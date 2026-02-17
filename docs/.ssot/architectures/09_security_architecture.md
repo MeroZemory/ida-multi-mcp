@@ -1,5 +1,11 @@
 # 09. Security Architecture
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## 신뢰 경계
 - 기본 통신은 localhost(127.0.0.1)
 - 중앙 서버는 `instance_id` 명시 강제로 오작동/혼선 완화

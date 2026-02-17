@@ -1,5 +1,11 @@
 # 17. Extensibility and Evolution
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## 확장 지점
 - 새 management tool: `server._register_handlers()`에 추가
 - 새 IDA tool: `ida_mcp/api_*.py`에 `@tool` 추가

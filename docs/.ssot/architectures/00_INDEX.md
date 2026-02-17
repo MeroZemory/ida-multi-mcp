@@ -1,18 +1,29 @@
 # ida-multi-mcp Architecture SSOT Index
 
-작성 기준: `README.md`, `DESIGN.md`, `src/ida_multi_mcp/**`, `tests/**` (2026-02-17 기준).
+Last updated: 2026-02-17
+Status: Active
+Change class: B (scope/architecture)
 
-거버넌스 링크:
-- `docs/PROJECT_GOVERNANCE.md`
-- `docs/.ssot/PRD.md`
-- `docs/.ssot/contracts/INDEX.md`
-- `docs/.ssot/decisions/INDEX.md`
-- `docs/.ssot/TODO.md`
-- `docs/.ssot/HISTORY.md`
-- `docs/ops/ROADMAP.md`
+## Governance Alignment
+- Authority order:
+1. `docs/.ssot/contracts/*`
+2. `docs/.ssot/PRD.md`
+3. `docs/.ssot/decisions/*`
+4. `docs/.ssot/architectures/*`
+5. `docs/phases/_completed/*`
+6. `docs/ops/*`
+- 이 디렉터리는 아키텍처 설명 문서이며 Contracts 의미론을 재정의하지 않는다.
 
-본 문서 세트는 요청하신 "시니어 개발자 20명 관점"을 다음 20개 아키텍처 시각으로 분해한 SSOT입니다.
+## Required Cross-links
+- Governance: `docs/PROJECT_GOVERNANCE.md`
+- PRD: `docs/.ssot/PRD.md`
+- Contracts: `docs/.ssot/contracts/INDEX.md`
+- Decisions: `docs/.ssot/decisions/INDEX.md`
+- SSOT TODO: `docs/.ssot/TODO.md`
+- SSOT History: `docs/.ssot/HISTORY.md`
+- Roadmap: `docs/ops/ROADMAP.md`
 
+## Architecture Set
 1. `01_system_context.md` - 시스템 컨텍스트
 2. `02_component_decomposition.md` - 컴포넌트 분해
 3. `03_runtime_sequences.md` - 런타임 시퀀스
@@ -31,6 +42,6 @@
 16. `16_compatibility_matrix.md` - 호환성 매트릭스
 17. `17_extensibility_evolution.md` - 확장성/진화
 18. `18_module_ownership.md` - 모듈 책임 분리
-19. `19_operational_runbook.md` - 운영 런북
+19. `19_operational_runbook.md` - 운영 런북(현재 N/A 맥락 문서 포함)
 20. `20_adr_summary.md` - ADR 요약
 21. `21_architecture_problems_spec.md` - 아키텍처 문제점 리서치/명세

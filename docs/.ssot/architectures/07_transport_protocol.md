@@ -1,5 +1,11 @@
 # 07. Transport and Protocol Architecture
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## 전송 계층
 - Client <-> Aggregator: MCP stdio
 - Aggregator <-> IDA instance: HTTP JSON-RPC (`POST /mcp`)

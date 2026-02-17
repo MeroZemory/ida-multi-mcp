@@ -1,5 +1,11 @@
 # 06. Tool Discovery and Schema Federation
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## 소스
 - 정적 스키마: `src/ida_multi_mcp/ida_tool_schemas.json` (34개)
 - 관리 도구: 서버 내장 4개

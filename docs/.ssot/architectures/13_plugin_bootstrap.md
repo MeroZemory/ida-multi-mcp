@@ -1,5 +1,11 @@
 # 13. Plugin Bootstrap Architecture
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## 로더 역할
 `plugin/ida_multi_mcp_loader.py`는 IDA 플러그인 폴더에 위치하는 bootstrapper다.
 

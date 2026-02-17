@@ -1,5 +1,11 @@
 # 01. System Context Architecture
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## 목적
 `ida-multi-mcp`는 여러 IDA Pro 인스턴스를 단일 MCP 엔드포인트로 통합한다.
 

@@ -1,5 +1,11 @@
 # 20. Architecture Decision Record Summary
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## ADR-001 단일 MCP 집계 서버
 - 결정: 중앙 서버 + 멀티 IDA 라우팅
 - 이유: 클라이언트 설정 단순화, 다중 바이너리 동시 분석

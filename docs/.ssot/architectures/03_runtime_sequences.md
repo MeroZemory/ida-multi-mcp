@@ -1,5 +1,11 @@
 # 03. Runtime Sequences
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## A. 초기 기동 시퀀스
 1. 운영자가 `ida-multi-mcp` 실행.
 2. `server.run()`이 stale process 정리 및 auto-rediscovery 수행.

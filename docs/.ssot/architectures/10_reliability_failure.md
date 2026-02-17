@@ -1,5 +1,11 @@
 # 10. Reliability and Failure Handling
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## 주요 실패 시나리오
 - IDA 미연결 상태에서 tool call
 - 없는/만료된 instance_id 사용

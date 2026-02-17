@@ -1,5 +1,11 @@
 # 08. Concurrency and Synchronization
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## 중앙 서버 동시성
 - registry 접근은 파일락으로 직렬화
 - MCP 요청은 I/O 경계에서 병렬 가능

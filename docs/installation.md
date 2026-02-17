@@ -2,6 +2,10 @@
 
 This guide is for AI agents. Follow each step exactly.
 
+Last updated: 2026-02-17
+Governance reference: `docs/PROJECT_GOVERNANCE.md`
+Authority note: this document is operational guidance and must not redefine contracts.
+
 ## Prerequisites
 
 - Python 3.11+

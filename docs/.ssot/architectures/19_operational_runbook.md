@@ -1,5 +1,11 @@
 # 19. Operational Runbook
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## Day-0 설치
 1. 패키지 설치(IDA Python 포함).
 2. `ida-multi-mcp --install` 실행.

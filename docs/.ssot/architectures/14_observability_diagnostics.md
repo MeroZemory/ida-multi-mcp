@@ -1,5 +1,11 @@
 # 14. Observability and Diagnostics
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## 로그 채널
 - 중앙 서버: stderr/print 기반 상태 로그
 - 플러그인: IDA 콘솔 로그

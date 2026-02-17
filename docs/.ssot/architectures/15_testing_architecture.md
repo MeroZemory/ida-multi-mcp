@@ -1,5 +1,11 @@
 # 15. Testing Architecture
 
+## Governance Alignment
+- Authority order: `docs/.ssot/contracts/*` -> `docs/.ssot/PRD.md` -> `docs/.ssot/decisions/*` -> this document.
+- Contract reference baseline: `docs/.ssot/contracts/INDEX.md` (v1 baseline).
+- This document explains architecture and does not redefine contract semantics.
+
+
 ## 현재 테스트 커버리지
 - router: `instance_id` 필수 검증 (`tests/test_router_requires_instance_id.py`)
 - install: Windows settings overwrite fallback (`tests/test_install_windows_settings_fallback.py`)
