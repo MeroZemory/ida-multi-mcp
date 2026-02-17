@@ -2,6 +2,15 @@
 
 작성 기준: `README.md`, `DESIGN.md`, `src/ida_multi_mcp/**`, `tests/**` (2026-02-17 기준).
 
+거버넌스 링크:
+- `docs/PROJECT_GOVERNANCE.md`
+- `docs/.ssot/PRD.md`
+- `docs/.ssot/contracts/INDEX.md`
+- `docs/.ssot/decisions/INDEX.md`
+- `docs/.ssot/TODO.md`
+- `docs/.ssot/HISTORY.md`
+- `docs/ops/ROADMAP.md`
+
 본 문서 세트는 요청하신 "시니어 개발자 20명 관점"을 다음 20개 아키텍처 시각으로 분해한 SSOT입니다.
 
 1. `01_system_context.md` - 시스템 컨텍스트
