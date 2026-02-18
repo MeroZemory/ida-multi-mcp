@@ -85,7 +85,10 @@ def get_binary_metadata():
         import idc
 
         binary_path = idaapi.get_input_file_path() or "unknown"
-        binary_name = os.path.basename(binary_path)
+        # idaapi may return a path from another OS (e.g. Windows path on macOS).
+        # Normalize separators before basename extraction to avoid storing full paths
+        # as binary_name.
+        binary_name = os.path.basename(binary_path.replace("\\", "/"))
 
         # Get IDB path (the .idb/.i64 database file)
         idb_path = None

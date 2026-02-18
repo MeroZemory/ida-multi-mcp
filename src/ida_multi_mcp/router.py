@@ -5,6 +5,7 @@ Routes MCP requests to the appropriate IDA instance with fallback verification.
 
 import json
 import http.client
+import os
 import time
 from typing import Any
 
@@ -98,11 +99,18 @@ class InstanceRouter:
         """
         now = time.time()
 
+        def _normalize_binary_name(name: str | None) -> str | None:
+            if not name:
+                return None
+            # Normalize both Windows and POSIX-like paths, then compare case-insensitively.
+            normalized = os.path.basename(name.replace("\\", "/")).strip()
+            return normalized.casefold() if normalized else None
+
         # Check cache
         if instance_id in self._binary_path_cache:
             cached_name, cached_time = self._binary_path_cache[instance_id]
             if now - cached_time < self._cache_timeout:
-                return cached_name == instance_info.get("binary_name")
+                return cached_name == _normalize_binary_name(instance_info.get("binary_name"))
 
         # Query fresh binary metadata
         host = instance_info.get("host", "127.0.0.1")
@@ -110,7 +118,7 @@ class InstanceRouter:
         metadata = query_binary_metadata(host, port)
 
         # Extract binary name (module) from metadata
-        current_name = metadata.get("module") if metadata else None
+        current_name = _normalize_binary_name(metadata.get("module") if metadata else None)
 
         # Update cache
         self._binary_path_cache[instance_id] = (current_name, now)
@@ -120,7 +128,7 @@ class InstanceRouter:
             return True
 
         # Compare by binary name
-        return current_name == instance_info.get("binary_name")
+        return current_name == _normalize_binary_name(instance_info.get("binary_name"))
 
     def _send_request(self, instance_info: dict, method: str, params: dict) -> dict[str, Any]:
         """Send HTTP request to IDA instance.
