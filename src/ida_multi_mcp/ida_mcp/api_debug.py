@@ -552,10 +552,16 @@ def dbg_read(regions: list[MemoryRead] | MemoryRead) -> list[dict]:
     dbg_ensure_running()
     results = []
 
+    _MAX_READ_SIZE = 1048576  # 1MB max per region
+
     for region in regions:
         try:
             addr = parse_address(region["addr"])
             size = region["size"]
+
+            # Security: enforce max read size to prevent memory exhaustion
+            if not isinstance(size, int) or size < 0 or size > _MAX_READ_SIZE:
+                raise ValueError(f"Size must be between 0 and {_MAX_READ_SIZE} (got {size})")
 
             data = idaapi.dbg_read_memory(addr, size)
             if data:

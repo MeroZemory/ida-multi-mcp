@@ -362,6 +362,12 @@ def xrefs_to_field(queries: list[StructFieldQuery] | StructFieldQuery) -> list[d
     if isinstance(queries, dict):
         queries = [queries]
 
+    # Security: limit batch size
+    from .utils import MAX_BATCH_SIZE
+    if len(queries) > MAX_BATCH_SIZE:
+        from .sync import IDAError
+        raise IDAError(f"Batch too large: maximum {MAX_BATCH_SIZE} queries per request")
+
     results = []
     til = ida_typeinf.get_idati()
     if not til:
@@ -700,6 +706,12 @@ def find(
     """Search for patterns in the binary (strings, immediate values, or references)"""
     if not isinstance(targets, list):
         targets = [targets]
+
+    # Security: limit batch size
+    from .utils import MAX_BATCH_SIZE
+    if len(targets) > MAX_BATCH_SIZE:
+        from .sync import IDAError
+        raise IDAError(f"Batch too large: maximum {MAX_BATCH_SIZE} targets per request")
 
     # Enforce max limit to prevent token overflow
     if limit <= 0 or limit > 10000:

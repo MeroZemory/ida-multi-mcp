@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 from typing import Any, Optional
 from .zeromcp import McpRpcRegistry, McpServer, McpToolError, McpHttpRequestHandler
 
@@ -15,6 +16,7 @@ OUTPUT_LIMIT_MAX_CHARS = 50000
 OUTPUT_CACHE_MAX_SIZE = 100
 OUTPUT_CACHE_TTL_SECONDS = 600  # 10 minutes
 _output_cache: dict[str, tuple[Any, float]] = {}  # id -> (data, timestamp)
+_output_cache_lock = threading.Lock()  # Thread safety for concurrent HTTP requests
 _download_base_url: str = os.environ.get("IDA_MCP_URL", "http://127.0.0.1:13337")
 
 
@@ -85,7 +87,7 @@ def _add_download_info(result: Any, output_id: str, total_chars: int) -> Any:
 
 
 def _evict_expired_output_cache() -> None:
-    """Remove expired entries from the IDA-side output cache."""
+    """Remove expired entries from the IDA-side output cache. Caller must hold _output_cache_lock."""
     import time as _time
     now = _time.time()
     expired = [k for k, (_, ts) in _output_cache.items() if now - ts > OUTPUT_CACHE_TTL_SECONDS]
@@ -94,20 +96,22 @@ def _evict_expired_output_cache() -> None:
 
 
 def get_cached_output(output_id: str) -> Optional[Any]:
-    _evict_expired_output_cache()
-    entry = _output_cache.get(output_id)
-    if entry is None:
-        return None
-    return entry[0]
+    with _output_cache_lock:
+        _evict_expired_output_cache()
+        entry = _output_cache.get(output_id)
+        if entry is None:
+            return None
+        return entry[0]
 
 
 def _cache_output(output_id: str, data: Any) -> None:
     import time as _time
-    _evict_expired_output_cache()
-    if len(_output_cache) >= OUTPUT_CACHE_MAX_SIZE:
-        oldest_key = next(iter(_output_cache))
-        del _output_cache[oldest_key]
-    _output_cache[output_id] = (data, _time.time())
+    with _output_cache_lock:
+        _evict_expired_output_cache()
+        if len(_output_cache) >= OUTPUT_CACHE_MAX_SIZE:
+            oldest_key = next(iter(_output_cache))
+            del _output_cache[oldest_key]
+        _output_cache[output_id] = (data, _time.time())
 
 
 def _install_tools_call_patch() -> None:

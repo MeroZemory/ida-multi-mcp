@@ -63,6 +63,18 @@ def py_eval(
 
         # Security: restricted builtins - remove dangerous functions that enable
         # arbitrary file/network/process access outside IDA's analysis context.
+
+        # Wrap getattr/setattr to block dunder attribute access (sandbox escape prevention)
+        def _safe_getattr(obj, name, *default):
+            if isinstance(name, str) and name.startswith("__") and name.endswith("__"):
+                raise AttributeError(f"Access to dunder attribute '{name}' is blocked in py_eval")
+            return getattr(obj, name, *default)
+
+        def _safe_setattr(obj, name, value):
+            if isinstance(name, str) and name.startswith("__") and name.endswith("__"):
+                raise AttributeError(f"Setting dunder attribute '{name}' is blocked in py_eval")
+            return setattr(obj, name, value)
+
         _safe_builtins = {
             # Core types and conversions
             "True": True, "False": False, "None": None,
@@ -72,14 +84,14 @@ def py_eval(
             # Utility functions
             "abs": abs, "all": all, "any": any, "bin": bin, "chr": chr, "ord": ord,
             "divmod": divmod, "enumerate": enumerate, "filter": filter,
-            "format": format, "getattr": getattr, "hasattr": hasattr,
+            "format": format, "getattr": _safe_getattr, "hasattr": hasattr,
             "hash": hash, "hex": hex, "id": id, "isinstance": isinstance,
             "issubclass": issubclass, "iter": iter, "len": len, "map": map,
             "max": max, "min": min, "next": next, "oct": oct, "pow": pow,
             "print": print, "range": range, "repr": repr, "reversed": reversed,
-            "round": round, "setattr": setattr, "slice": slice, "sorted": sorted,
-            "sum": sum, "super": super, "type": type, "vars": vars, "zip": zip,
-            "dir": dir, "callable": callable, "property": property,
+            "round": round, "setattr": _safe_setattr, "slice": slice, "sorted": sorted,
+            "sum": sum, "zip": zip,
+            "callable": callable, "property": property,
             "staticmethod": staticmethod, "classmethod": classmethod,
             # Exceptions (needed for try/except)
             "Exception": Exception, "ValueError": ValueError, "TypeError": TypeError,

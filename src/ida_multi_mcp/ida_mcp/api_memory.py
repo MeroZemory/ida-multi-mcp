@@ -109,6 +109,11 @@ def get_int(
     if isinstance(queries, dict):
         queries = [queries]
 
+    # Security: limit batch size
+    if len(queries) > _MAX_BATCH_SIZE:
+        from .sync import IDAError
+        raise IDAError(f"Batch too large: maximum {_MAX_BATCH_SIZE} queries per request")
+
     results = []
     for item in queries:
         addr = item.get("addr", "")

@@ -434,18 +434,35 @@ def parse_address(addr: str | int) -> int:
     return result
 
 
-def normalize_list_input(value: list | str) -> list:
-    """Normalize input to list - accepts list or comma-separated string"""
+MAX_BATCH_SIZE = 500  # Security: prevent DoS via unbounded batch requests
+
+
+def normalize_list_input(value: list | str, max_items: int = MAX_BATCH_SIZE) -> list:
+    """Normalize input to list - accepts list or comma-separated string.
+
+    Args:
+        value: Input value (list or comma-separated string)
+        max_items: Maximum number of items allowed (default: MAX_BATCH_SIZE)
+
+    Raises:
+        ValueError: If result exceeds max_items
+    """
     if isinstance(value, list):
-        return value
-    if isinstance(value, str):
-        return [item.strip() for item in value.split(",") if item.strip()]
-    return [value]
+        result = value
+    elif isinstance(value, str):
+        result = [item.strip() for item in value.split(",") if item.strip()]
+    else:
+        result = [value]
+
+    if len(result) > max_items:
+        raise ValueError(f"Batch too large: {len(result)} items exceeds maximum of {max_items}")
+    return result
 
 
 def normalize_dict_list(
     value: list[dict] | dict | str | list[str] | Any,
     string_parser: Optional[Callable[[str], dict]] = None,
+    max_items: int = MAX_BATCH_SIZE,
 ) -> list[dict]:
     """Normalize input to list[dict] with optional string parsing
 
@@ -453,6 +470,10 @@ def normalize_dict_list(
         value: Input value (dict, list[dict], str, list[str], or any)
         string_parser: Optional function to convert string → dict
                       If None, strings → empty dict
+        max_items: Maximum number of items allowed (default: MAX_BATCH_SIZE)
+
+    Raises:
+        ValueError: If result exceeds max_items
 
     Flow:
         dict → [dict]
@@ -461,6 +482,11 @@ def normalize_dict_list(
         list[dict] → list[dict]
         Any → [{}]
     """
+    def _check(result: list[dict]) -> list[dict]:
+        if len(result) > max_items:
+            raise ValueError(f"Batch too large: {len(result)} items exceeds maximum of {max_items}")
+        return result
+
     if isinstance(value, dict):
         return [value]
     elif isinstance(value, list):
@@ -468,15 +494,15 @@ def normalize_dict_list(
             return [{}]
         # Check if list[str] or list[dict]
         if all(isinstance(item, dict) for item in value):
-            return value
+            return _check(value)
         elif all(isinstance(item, str) for item in value):
             # list[str] → map with parser
             if string_parser:
-                return [string_parser(s.strip()) for s in value if s.strip()]
+                return _check([string_parser(s.strip()) for s in value if s.strip()])
             return [{}]
         else:
             # Mixed types - filter dicts only
-            return [item for item in value if isinstance(item, dict)] or [{}]
+            return _check([item for item in value if isinstance(item, dict)] or [{}])
     elif isinstance(value, str):
         # Try JSON parse first
         try:
@@ -484,7 +510,7 @@ def normalize_dict_list(
             if isinstance(parsed, dict):
                 return [parsed]
             elif isinstance(parsed, list):
-                return parsed
+                return _check(parsed)
         except (json.JSONDecodeError, ValueError):
             pass
 
@@ -494,7 +520,7 @@ def normalize_dict_list(
             return [{}]
 
         if string_parser:
-            return [string_parser(part) for part in parts]
+            return _check([string_parser(part) for part in parts])
         return [{}]
     else:
         # Any other type → empty dict

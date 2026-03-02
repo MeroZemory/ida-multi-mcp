@@ -30,10 +30,16 @@ from .utils import (
 
 @tool
 @idasync
+_MAX_BATCH_SIZE = 500
+
 def set_comments(items: list[CommentOp] | CommentOp):
     """Set comments at addresses (both disassembly and decompiler views)"""
     if isinstance(items, dict):
         items = [items]
+
+    # Security: limit batch size (each comment triggers decompilation)
+    if len(items) > _MAX_BATCH_SIZE:
+        raise IDAError(f"Batch too large: maximum {_MAX_BATCH_SIZE} items per request")
 
     results = []
     for item in items:
@@ -117,6 +123,10 @@ def patch_asm(items: list[AsmPatchOp] | AsmPatchOp) -> list[dict]:
     if isinstance(items, dict):
         items = [items]
 
+    # Security: limit batch size
+    if len(items) > _MAX_BATCH_SIZE:
+        raise IDAError(f"Batch too large: maximum {_MAX_BATCH_SIZE} items per request")
+
     results = []
     for item in items:
         addr_str = item.get("addr", "")
@@ -162,6 +172,14 @@ def rename(batch: RenameBatch) -> dict:
         if items is None:
             return []
         return [items] if isinstance(items, dict) else items
+
+    # Security: limit total rename operations across all categories
+    total_items = sum(
+        len(_normalize_items(batch.get(cat)))
+        for cat in ("func", "data", "local", "stack")
+    )
+    if total_items > _MAX_BATCH_SIZE:
+        raise IDAError(f"Batch too large: {total_items} total renames exceeds maximum of {_MAX_BATCH_SIZE}")
 
     def _has_user_name(ea: int) -> bool:
         flags = idaapi.get_flags(ea)

@@ -106,7 +106,7 @@ class JsonRpcRegistry:
     def __init__(self):
         self.methods: dict[str, Callable] = {}
         self._cache: dict[Callable, tuple[inspect.Signature, dict, list[str]]] = {}
-        self.redact_exceptions = False
+        self.redact_exceptions = True
 
     def method(self, func: Callable, name: str | None = None) -> Callable:
         self.methods[name or func.__name__] = func # type: ignore

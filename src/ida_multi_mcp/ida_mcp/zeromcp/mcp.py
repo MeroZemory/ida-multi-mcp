@@ -124,6 +124,10 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             pass
 
     def do_GET(self):
+        # Security: validate Host header to prevent DNS rebinding
+        if not self._check_host_header():
+            return
+
         match urlparse(self.path).path:
             case "/sse":
                 self._handle_sse_get()

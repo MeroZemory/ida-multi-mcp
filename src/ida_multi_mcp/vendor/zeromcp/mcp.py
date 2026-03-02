@@ -100,8 +100,11 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         if preflight:
             self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept, X-Requested-With, Mcp-Session-Id, Mcp-Protocol-Version")
+            # Security: only allow Private Network Access for localhost origins
             if self.headers.get("Access-Control-Request-Private-Network") == "true":
-                self.send_header("Access-Control-Allow-Private-Network", "true")
+                parsed_origin = urlparse(origin)
+                if parsed_origin.hostname in ("localhost", "127.0.0.1", "::1"):
+                    self.send_header("Access-Control-Allow-Private-Network", "true")
 
     def send_error(self, code, message=None, explain=None):
         self.send_response(code)
@@ -118,7 +121,30 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             # Client disconnected - normal, suppress traceback
             pass
 
+    def _check_host_header(self) -> bool:
+        """Validate Host header to prevent DNS rebinding attacks on all endpoints."""
+        host_header = self.headers.get("Host", "")
+        # Strip port to get hostname
+        hostname = host_header.split(":")[0] if host_header else ""
+        if hostname not in ("127.0.0.1", "localhost", "::1", ""):
+            self.send_error(403, "Forbidden: invalid Host header")
+            return False
+        return True
+
+    def _check_content_type_json(self) -> bool:
+        """Enforce Content-Type: application/json on MCP endpoints."""
+        content_type = self.headers.get("Content-Type", "")
+        if "application/json" not in content_type and "text/plain" not in content_type:
+            if content_type:
+                self.send_error(415, "Unsupported Media Type: expected application/json")
+                return False
+        return True
+
     def do_GET(self):
+        # Security: validate Host header
+        if not self._check_host_header():
+            return
+
         match urlparse(self.path).path:
             case "/sse":
                 self._handle_sse_get()
@@ -128,8 +154,20 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
                 self.send_error(404, "Not Found")
 
     def do_POST(self):
-        # Read request body
-        content_length = int(self.headers.get("Content-Length", 0))
+        # Security: validate Host header to prevent DNS rebinding
+        if not self._check_host_header():
+            return
+
+        # Read request body with validated Content-Length
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+        except (ValueError, TypeError):
+            self.send_error(400, "Invalid Content-Length header")
+            return
+
+        if content_length < 0:
+            self.send_error(400, "Invalid Content-Length: must be non-negative")
+            return
 
         if content_length > self.mcp_server.post_body_limit:
             self.send_error(413, f"Payload Too Large: exceeds {self.mcp_server.post_body_limit} bytes")
@@ -141,6 +179,9 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             case "/sse":
                 self._handle_sse_post(body)
             case "/mcp":
+                # Security: enforce JSON content type to force CORS preflight
+                if not self._check_content_type_json():
+                    return
                 self._handle_mcp_post(body)
             case _:
                 self.send_error(404, "Not Found")
@@ -151,7 +192,14 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         self.send_cors_headers(preflight=True)
         self.end_headers()
 
+    _MAX_SSE_CONNECTIONS = 10
+
     def _handle_sse_get(self):
+        # Security: limit SSE connections to prevent resource exhaustion
+        if len(self.mcp_server._sse_connections) >= self._MAX_SSE_CONNECTIONS:
+            self.send_error(503, "Too many SSE connections")
+            return
+
         # Create SSE connection wrapper
         conn = _McpSseConnection(self.wfile)
         self.mcp_server._sse_connections[conn.session_id] = conn
@@ -196,7 +244,12 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
 
         # Dispatch to MCP registry
         setattr(self.mcp_server._protocol_version, "data", "2024-11-05")
-        response = self.mcp_server.registry.dispatch(body)
+        try:
+            response = self.mcp_server.registry.dispatch(body)
+        finally:
+            # Security: clean up thread-local state to prevent leaking between requests
+            self.mcp_server._enabled_extensions.data = set()
+            self.mcp_server._protocol_version.data = None
 
         # Send SSE response if necessary
         if response is not None:
@@ -224,7 +277,12 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
 
         # Dispatch to MCP registry
         setattr(self.mcp_server._protocol_version, "data", "2025-06-18")
-        response = self.mcp_server.registry.dispatch(body)
+        try:
+            response = self.mcp_server.registry.dispatch(body)
+        finally:
+            # Security: clean up thread-local state to prevent leaking between requests
+            self.mcp_server._enabled_extensions.data = set()
+            self.mcp_server._protocol_version.data = None
 
         def send_response(status: int, body: bytes):
             self.send_response(status)
@@ -360,14 +418,19 @@ class McpServer:
 
         print("[MCP] Server stopped", file=sys.stderr)
 
+    _STDIO_MAX_LINE = 10 * 1024 * 1024  # 10MB max per line
+
     def stdio(self, stdin: BinaryIO | None = None, stdout: BinaryIO | None = None):
         stdin = stdin or sys.stdin.buffer
         stdout = stdout or sys.stdout.buffer
         while True:
             try:
-                request = stdin.readline()
+                request = stdin.readline(self._STDIO_MAX_LINE + 1)
                 if not request: # EOF
                     break
+                if len(request) > self._STDIO_MAX_LINE:
+                    # Security: reject oversized lines to prevent memory exhaustion
+                    continue
 
                 # Strip whitespace (trailing newline) before parsing
                 request = request.strip()

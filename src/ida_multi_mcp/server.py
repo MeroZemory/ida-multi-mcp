@@ -335,7 +335,6 @@ class IdaMultiMcpServer:
 
         # Security: validate output_dir to prevent path traversal
         resolved_dir = os.path.realpath(output_dir)
-        cwd = os.path.realpath(os.getcwd())
         # Reject absolute paths that escape CWD unless they are subdirectories
         if ".." in os.path.normpath(output_dir).split(os.sep):
             return {"error": "output_dir must not contain '..' path components"}
