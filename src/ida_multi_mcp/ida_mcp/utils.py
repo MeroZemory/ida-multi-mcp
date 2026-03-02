@@ -413,16 +413,25 @@ def get_image_size() -> int:
     return image_size
 
 
+_MAX_ADDRESS = 0xFFFFFFFFFFFFFFFF  # 64-bit max
+
+
 def parse_address(addr: str | int) -> int:
     if isinstance(addr, int):
-        return addr
-    try:
-        return int(addr, 0)
-    except ValueError:
-        for ch in addr:
-            if ch not in "0123456789abcdefABCDEF":
-                raise IDAError(f"Failed to parse address: {addr}")
-        raise IDAError(f"Failed to parse address (missing 0x prefix): {addr}")
+        result = addr
+    else:
+        try:
+            result = int(addr, 0)
+        except ValueError:
+            for ch in addr:
+                if ch not in "0123456789abcdefABCDEF":
+                    raise IDAError(f"Failed to parse address: {addr}")
+            raise IDAError(f"Failed to parse address (missing 0x prefix): {addr}")
+
+    # Security: validate address range to prevent integer overflow in IDA C APIs
+    if result < 0 or result > _MAX_ADDRESS:
+        raise IDAError(f"Address out of range: must be 0..0x{_MAX_ADDRESS:X}")
+    return result
 
 
 def normalize_list_input(value: list | str) -> list:
@@ -673,6 +682,9 @@ def get_type_by_name(type_name: str) -> ida_typeinf.tinfo_t:
 
 
 def paginate(data: list[T], offset: int, count: int) -> Page[T]:
+    # Security: validate pagination parameters
+    offset = max(0, offset)
+    count = max(0, count)
     if count == 0:
         count = len(data)
     next_offset = offset + count
@@ -684,9 +696,16 @@ def paginate(data: list[T], offset: int, count: int) -> Page[T]:
     }
 
 
+_MAX_PATTERN_LENGTH = 500
+
+
 def pattern_filter(data: list[T], pattern: str, key: str) -> list[T]:
     if not pattern:
         return data
+
+    # Security: limit pattern length to prevent ReDoS
+    if len(pattern) > _MAX_PATTERN_LENGTH:
+        raise IDAError(f"Pattern too long: maximum {_MAX_PATTERN_LENGTH} characters")
 
     regex = None
     use_glob = False

@@ -42,8 +42,13 @@ def _replace_or_overwrite_file(src: str, dst: str, *, attempts: int = 6) -> bool
     # Fallback: overwrite in-place (non-atomic) for Windows "access denied" renames
     try:
         if os.path.exists(dst):
+            # Security: check for symlinks before writing (prevent symlink attacks)
+            if os.path.islink(dst):
+                print(f"  Warning: skipping symlink target: {dst}", file=sys.stderr)
+                os.unlink(src)
+                return False
             try:
-                os.chmod(dst, 0o666)
+                os.chmod(dst, 0o644)  # Security: use restrictive permissions (not 0o666)
             except Exception:
                 pass
         shutil.copyfile(src, dst)
@@ -825,15 +830,35 @@ def cmd_install(args):
     loader_dest = ida_plugins_dir / "ida_multi_mcp.py"
 
     # Try symlink first (development-friendly), fall back to copy
-    if loader_dest.exists() or loader_dest.is_symlink():
-        loader_dest.unlink()
-
+    # Use a temporary name + rename to avoid TOCTOU race between unlink/symlink
+    import tempfile
+    loader_tmp = None
     try:
-        loader_dest.symlink_to(loader_source)
-        print(f"\n  Symlinked plugin: {loader_dest} -> {loader_source}")
-    except (OSError, NotImplementedError):
-        shutil.copy2(loader_source, loader_dest)
-        print(f"\n  Copied plugin to: {loader_dest}")
+        # Create symlink/copy at a temp path in the same directory, then atomically rename
+        tmp_fd, loader_tmp = tempfile.mkstemp(
+            prefix=".ida_multi_mcp_", suffix=".tmp",
+            dir=str(ida_plugins_dir),
+        )
+        os.close(tmp_fd)
+        os.unlink(loader_tmp)  # Remove the temp file so we can create symlink at this path
+
+        try:
+            Path(loader_tmp).symlink_to(loader_source)
+            os.replace(loader_tmp, str(loader_dest))
+            loader_tmp = None  # Successfully replaced, no cleanup needed
+            print(f"\n  Symlinked plugin: {loader_dest} -> {loader_source}")
+        except (OSError, NotImplementedError):
+            # Symlink failed, fall back to copy + rename
+            shutil.copy2(loader_source, loader_tmp)
+            os.replace(loader_tmp, str(loader_dest))
+            loader_tmp = None
+            print(f"\n  Copied plugin to: {loader_dest}")
+    finally:
+        if loader_tmp is not None:
+            try:
+                os.unlink(loader_tmp)
+            except OSError:
+                pass
 
     print("\n  [ok] IDA plugin installed!")
 
@@ -867,8 +892,23 @@ def cmd_uninstall(args):
     # 2. Clean up registry
     registry_dir = Path.home() / ".ida-mcp"
     if registry_dir.exists():
-        shutil.rmtree(registry_dir)
-        print(f"  Removed registry: {registry_dir}")
+        # Security: don't follow symlinks during uninstall (prevent arbitrary deletion)
+        if registry_dir.is_symlink():
+            registry_dir.unlink()
+            print(f"  Removed registry symlink: {registry_dir}")
+        else:
+            # Only remove known files, not arbitrary directory trees
+            for known_file in ["instances.json", "instances.json.lock"]:
+                fpath = registry_dir / known_file
+                if fpath.exists() and not fpath.is_symlink():
+                    fpath.unlink()
+            # Remove directory only if empty (safe)
+            try:
+                registry_dir.rmdir()
+            except OSError:
+                # Directory not empty (has unexpected files), leave it
+                pass
+            print(f"  Removed registry: {registry_dir}")
 
     # 3. Remove MCP client configuration
     print()

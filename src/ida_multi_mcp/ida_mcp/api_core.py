@@ -305,8 +305,17 @@ def find_regex(
     if limit > 500:
         limit = 500
 
+    # Security: limit regex pattern length to prevent ReDoS
+    if len(pattern) > 500:
+        from .sync import IDAError
+        raise IDAError("Regex pattern too long: maximum 500 characters")
+
     matches = []
-    regex = re.compile(pattern, re.IGNORECASE)
+    try:
+        regex = re.compile(pattern, re.IGNORECASE)
+    except re.error as e:
+        from .sync import IDAError
+        raise IDAError(f"Invalid regex pattern: {e}")
     strings = _get_strings_cache()
 
     skipped = 0

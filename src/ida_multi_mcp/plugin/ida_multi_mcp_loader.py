@@ -92,7 +92,7 @@ def PLUGIN_ENTRY():
     # Fallback: add candidate paths and retry
     for path in _collect_candidate_paths():
         if path not in sys.path:
-            sys.path.insert(0, path)
+            sys.path.append(path)
 
     try:
         mod = importlib.import_module("ida_multi_mcp.plugin.ida_multi_mcp")

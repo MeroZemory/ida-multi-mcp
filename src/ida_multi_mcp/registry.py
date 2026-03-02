@@ -5,6 +5,9 @@ Manages the global registry of IDA Pro instances with atomic file operations.
 
 import json
 import os
+import stat
+import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +17,9 @@ from .filelock import FileLock
 from .instance_id import generate_instance_id, resolve_collision
 
 REGISTRY_PATH_ENV = "IDA_MULTI_MCP_REGISTRY_PATH"
+MAX_INSTANCES = 100  # Prevent unbounded registry growth
+MAX_EXPIRED = 200    # Prevent unbounded expired list growth
+ALLOWED_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
 def get_default_registry_path() -> str:
@@ -48,8 +54,13 @@ class InstanceRegistry:
         self.registry_path = registry_path
         self.lock_path = registry_path + ".lock"
 
-        # Ensure parent directory exists
-        os.makedirs(os.path.dirname(self.registry_path), exist_ok=True)
+        # Ensure parent directory exists with restrictive permissions
+        registry_dir = os.path.dirname(self.registry_path)
+        if not os.path.exists(registry_dir):
+            os.makedirs(registry_dir, exist_ok=True)
+            # Set directory permissions to owner-only (0o700) on Unix
+            if sys.platform != "win32":
+                os.chmod(registry_dir, stat.S_IRWXU)
 
     def _iso_timestamp(self) -> str:
         """Generate ISO 8601 timestamp string."""
@@ -74,18 +85,20 @@ class InstanceRegistry:
 
     def _load(self) -> dict[str, Any]:
         """Load registry data from disk (assumes lock held)."""
-        if not os.path.exists(self.registry_path):
-            return {"instances": {}, "active_instance": None, "expired": {}}
-
         try:
             with open(self.registry_path, "r") as f:
                 data = json.load(f)
             if not isinstance(data, dict):
                 raise ValueError("Registry root must be an object")
+        except FileNotFoundError:
+            return {"instances": {}, "active_instance": None, "expired": {}}
         except Exception:
             # Quarantine corrupted file and recover with empty registry.
-            corrupt_path = self.registry_path + f".corrupt-{int(time.time())}"
             try:
+                # Use unpredictable suffix for quarantine name (prevents symlink attacks)
+                import uuid
+                corrupt_suffix = uuid.uuid4().hex[:8]
+                corrupt_path = self.registry_path + f".corrupt-{corrupt_suffix}"
                 os.replace(self.registry_path, corrupt_path)
             except Exception:
                 pass
@@ -95,17 +108,47 @@ class InstanceRegistry:
         data.setdefault("instances", {})
         data.setdefault("active_instance", None)
         data.setdefault("expired", {})
+
+        # Security: validate host fields to prevent SSRF
+        for instance_id, info in list(data["instances"].items()):
+            host = info.get("host", "127.0.0.1")
+            if host not in ALLOWED_HOSTS:
+                # Reject entries with non-localhost hosts
+                del data["instances"][instance_id]
+
         return data
 
     def _save(self, data: dict[str, Any]) -> None:
         """Save registry data to disk atomically (assumes lock held)."""
-        # Write to temp file first
-        temp_path = self.registry_path + ".tmp"
-        with open(temp_path, 'w') as f:
-            json.dump(data, f, indent=2)
+        temp_fd = None
+        temp_path = None
+        try:
+            # Use unpredictable temp file with restrictive permissions
+            temp_fd, temp_path = tempfile.mkstemp(
+                prefix="instances.",
+                suffix=".tmp",
+                dir=os.path.dirname(self.registry_path),
+            )
+            with os.fdopen(temp_fd, 'w') as f:
+                temp_fd = None  # fdopen takes ownership of fd
+                json.dump(data, f, indent=2)
 
-        # Atomic rename
-        os.replace(temp_path, self.registry_path)
+            # Atomic rename
+            os.replace(temp_path, self.registry_path)
+            temp_path = None  # Rename succeeded, don't clean up
+
+            # Set restrictive file permissions on Unix
+            if sys.platform != "win32":
+                os.chmod(self.registry_path, stat.S_IRUSR | stat.S_IWUSR)
+        finally:
+            # Clean up temp file on failure
+            if temp_fd is not None:
+                os.close(temp_fd)
+            if temp_path is not None:
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
 
     def register(self, pid: int, port: int, idb_path: str, **metadata) -> str:
         """Register a new IDA instance.
@@ -123,6 +166,20 @@ class InstanceRegistry:
             data = self._load()
             existing_ids = set(data["instances"].keys())
 
+            # Security: enforce max instance count to prevent resource exhaustion
+            if len(data["instances"]) >= MAX_INSTANCES:
+                raise ValueError(
+                    f"Registry full: maximum {MAX_INSTANCES} instances allowed. "
+                    "Remove stale instances first."
+                )
+
+            # Security: validate host is localhost only (prevent SSRF)
+            host = metadata.get("host", "127.0.0.1")
+            if host not in ALLOWED_HOSTS:
+                raise ValueError(
+                    f"Invalid host '{host}': only localhost connections allowed"
+                )
+
             # Generate instance ID
             candidate_id = generate_instance_id(pid, port, idb_path)
             instance_id = resolve_collision(candidate_id, existing_ids, pid, port, idb_path)
@@ -130,7 +187,7 @@ class InstanceRegistry:
             # Store instance info with required fields
             instance_info = {
                 "pid": pid,
-                "host": metadata.get("host", "127.0.0.1"),
+                "host": host,
                 "port": port,
                 "binary_name": metadata.get("binary_name", "unknown"),
                 "binary_path": metadata.get("binary_path", ""),
@@ -324,6 +381,12 @@ class InstanceRegistry:
                 if now - expired_at > max_age_seconds:
                     del expired[instance_id]
                     removed_count += 1
+
+            # Cap expired list size to prevent unbounded growth
+            while len(expired) > MAX_EXPIRED:
+                oldest_key = next(iter(expired))
+                del expired[oldest_key]
+                removed_count += 1
 
             data["expired"] = expired
             self._save(data)

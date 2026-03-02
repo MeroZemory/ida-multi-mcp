@@ -333,6 +333,15 @@ class IdaMultiMcpServer:
                 "hint": "Call list_instances() and pass instance_id explicitly.",
             }
 
+        # Security: validate output_dir to prevent path traversal
+        resolved_dir = os.path.realpath(output_dir)
+        cwd = os.path.realpath(os.getcwd())
+        # Reject absolute paths that escape CWD unless they are subdirectories
+        if ".." in os.path.normpath(output_dir).split(os.sep):
+            return {"error": "output_dir must not contain '..' path components"}
+        # Warn but allow absolute paths (they may be intentional from the user)
+        output_dir = resolved_dir
+
         # addr → name mapping (populated by list_funcs when using 'all')
         addr_names: dict[str, str] = {}
 
@@ -431,6 +440,8 @@ class IdaMultiMcpServer:
                 if code:
                     name = addr_names.get(addr) or decomp.get("name") or addr
                     safe_name = re.sub(r'[<>:"/\\|?*]', "_", name)
+                    # Security: strip '..' path traversal sequences from function names
+                    safe_name = safe_name.replace("..", "_")
                     # Include address to avoid collisions across duplicate function names.
                     addr_suffix = re.sub(r"[^0-9A-Fa-fx]", "_", str(addr))
                     filename = f"{safe_name}_{addr_suffix}.c"
@@ -695,8 +706,14 @@ class IdaMultiMcpServer:
         """
         import http.client
 
+        from .registry import ALLOWED_HOSTS
+
         host = instance_info.get("host", "127.0.0.1")
         port = instance_info.get("port")
+
+        # Security: only connect to localhost instances
+        if host not in ALLOWED_HOSTS:
+            return []
 
         try:
             conn = http.client.HTTPConnection(host, port, timeout=10.0)

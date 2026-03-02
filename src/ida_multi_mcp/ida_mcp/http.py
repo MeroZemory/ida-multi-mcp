@@ -71,7 +71,8 @@ def get_cors_policy(port: int) -> str:
         case "direct":
             return f"http://127.0.0.1:{port} http://localhost:{port}"
         case _:
-            return "*"
+            # Security: default to restrictive policy on unknown values
+            return f"http://127.0.0.1:{port} http://localhost:{port}"
 
 
 ORIGINAL_TOOLS = handle_enabled_tools(MCP_SERVER.tools, "enabled_tools")
@@ -353,6 +354,8 @@ input[type="submit"]:hover {
         body += "</form></body></html>"
         self._send_html(200, body)
 
+    _CONFIG_MAX_BODY = 10_000  # 10KB - config forms are small
+
     def _handle_config_post(self):
         """Handles the configuration form submission."""
         # Validate Content-Type
@@ -361,8 +364,17 @@ input[type="submit"]:hover {
             self.send_error(400, f"Unsupported Content-Type: {content_type}")
             return
 
+        # Security: enforce Content-Length limit on config endpoint
+        try:
+            length = int(self.headers.get("content-length", "0"))
+        except (ValueError, TypeError):
+            self.send_error(400, "Invalid Content-Length")
+            return
+        if length < 0 or length > self._CONFIG_MAX_BODY:
+            self.send_error(413, "Payload Too Large")
+            return
+
         # Parse the form data
-        length = int(self.headers.get("content-length", "0"))
         postvars = parse_qs(self.rfile.read(length).decode("utf-8"))
 
         # Update CORS policy

@@ -46,6 +46,9 @@ def is_process_alive(pid: int) -> bool:
             return True  # Process exists but we can't signal it
 
 
+_ALLOWED_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
 def ping_instance(host: str, port: int, timeout: float = 15.0) -> bool:
     """Ping an IDA instance via HTTP MCP ping.
 
@@ -57,6 +60,9 @@ def ping_instance(host: str, port: int, timeout: float = 15.0) -> bool:
     Returns:
         True if instance responds to ping
     """
+    # Security: only allow localhost connections (prevent SSRF)
+    if host not in _ALLOWED_HOSTS:
+        return False
     try:
         conn = http.client.HTTPConnection(host, port, timeout=timeout)
         request = json.dumps({
@@ -144,6 +150,9 @@ def query_binary_metadata(host: str, port: int, timeout: float = 5.0) -> dict | 
         Metadata dict with 'path' (IDB path) and 'module' (binary name),
         or None if query fails
     """
+    # Security: only allow localhost connections (prevent SSRF)
+    if host not in _ALLOWED_HOSTS:
+        return None
     try:
         conn = http.client.HTTPConnection(host, port, timeout=timeout)
         request = json.dumps({

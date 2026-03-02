@@ -9,7 +9,7 @@ import os
 import time
 from typing import Any
 
-from .registry import InstanceRegistry
+from .registry import InstanceRegistry, ALLOWED_HOSTS
 from .health import query_binary_metadata
 
 
@@ -144,6 +144,10 @@ class InstanceRouter:
         host = instance_info.get("host", "127.0.0.1")
         port = instance_info.get("port")
 
+        # Security: validate host is localhost only (prevent SSRF)
+        if host not in ALLOWED_HOSTS:
+            return {"error": "Connection refused: only localhost instances allowed"}
+
         try:
             conn = http.client.HTTPConnection(host, port, timeout=300.0)
             request_body = json.dumps({
@@ -166,11 +170,9 @@ class InstanceRouter:
                 return response_data
 
         except Exception as e:
+            # Security: don't leak host/port in error messages
             return {
-                "error": f"Failed to connect to instance: {str(e)}",
-                "instance_id": instance_info.get("id", "unknown"),
-                "host": host,
-                "port": port
+                "error": f"Failed to connect to instance: {type(e).__name__}",
             }
 
     def _handle_expired_instance(self, instance_id: str, expired_info: dict) -> dict[str, Any]:

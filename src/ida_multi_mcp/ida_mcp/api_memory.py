@@ -27,6 +27,10 @@ from .utils import (
 # ============================================================================
 
 
+_MAX_READ_SIZE = 1048576  # 1MB max read per region
+_MAX_BATCH_SIZE = 500     # Max items in a single batch request
+
+
 @tool
 @idasync
 def get_bytes(regions: list[MemoryRead] | MemoryRead) -> list[dict]:
@@ -34,12 +38,20 @@ def get_bytes(regions: list[MemoryRead] | MemoryRead) -> list[dict]:
     if isinstance(regions, dict):
         regions = [regions]
 
+    # Security: limit batch size
+    if len(regions) > _MAX_BATCH_SIZE:
+        from .sync import IDAError
+        raise IDAError(f"Batch too large: maximum {_MAX_BATCH_SIZE} regions per request")
+
     results = []
     for item in regions:
         addr = item.get("addr", "")
         size = item.get("size", 0)
 
         try:
+            # Security: enforce max read size to prevent memory exhaustion
+            if size < 0 or size > _MAX_READ_SIZE:
+                raise ValueError(f"Size must be between 0 and {_MAX_READ_SIZE} (got {size})")
             ea = parse_address(addr)
             data = " ".join(f"{x:#02x}" for x in ida_bytes.get_bytes(ea, size))
             results.append({"addr": addr, "data": data})
@@ -236,6 +248,11 @@ def patch(patches: list[MemoryPatch] | MemoryPatch) -> list[dict]:
     if isinstance(patches, dict):
         patches = [patches]
 
+    # Security: limit batch size
+    if len(patches) > _MAX_BATCH_SIZE:
+        from .sync import IDAError
+        raise IDAError(f"Batch too large: maximum {_MAX_BATCH_SIZE} patches per request")
+
     results = []
 
     for patch in patches:
@@ -265,6 +282,11 @@ def put_int(
     """Write integer values to memory addresses"""
     if isinstance(items, dict):
         items = [items]
+
+    # Security: limit batch size
+    if len(items) > _MAX_BATCH_SIZE:
+        from .sync import IDAError
+        raise IDAError(f"Batch too large: maximum {_MAX_BATCH_SIZE} items per request")
 
     results = []
     for item in items:

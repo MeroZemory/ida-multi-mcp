@@ -4,6 +4,7 @@ Provides in-memory LRU caching with TTL for tool responses that exceed
 the default output limit, enabling pagination via offset/size.
 """
 
+import threading
 import time
 import uuid
 from collections import OrderedDict
@@ -47,6 +48,7 @@ class ResponseCache:
         self.max_entries = max_entries
         self.ttl_seconds = ttl_seconds
         self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
+        self._lock = threading.Lock()  # Thread safety for concurrent access
 
     def store(
         self,
@@ -64,28 +66,29 @@ class ResponseCache:
         Returns:
             cache_id: 8-character hex identifier for retrieval
         """
-        # Evict expired entries first
-        self._evict_expired()
+        with self._lock:
+            # Evict expired entries first
+            self._evict_expired()
 
-        # Evict oldest if at capacity
-        while len(self._cache) >= self.max_entries:
-            self._cache.popitem(last=False)
+            # Evict oldest if at capacity
+            while len(self._cache) >= self.max_entries:
+                self._cache.popitem(last=False)
 
-        # Generate short cache ID
-        cache_id = uuid.uuid4().hex[:8]
+            # Security: use longer cache IDs to prevent brute-force enumeration
+            cache_id = uuid.uuid4().hex[:16]
 
-        # Store entry
-        self._cache[cache_id] = CacheEntry(
-            content=content,
-            created_at=time.time(),
-            tool_name=tool_name,
-            instance_id=instance_id
-        )
+            # Store entry
+            self._cache[cache_id] = CacheEntry(
+                content=content,
+                created_at=time.time(),
+                tool_name=tool_name,
+                instance_id=instance_id
+            )
 
-        # Move to end (most recently used)
-        self._cache.move_to_end(cache_id)
+            # Move to end (most recently used)
+            self._cache.move_to_end(cache_id)
 
-        return cache_id
+            return cache_id
 
     def get(
         self,
@@ -114,55 +117,56 @@ class ResponseCache:
         Raises:
             KeyError: If cache_id not found or expired
         """
-        # Evict expired first
-        self._evict_expired()
+        with self._lock:
+            # Evict expired first
+            self._evict_expired()
 
-        if cache_id not in self._cache:
-            raise KeyError(f"Cache entry '{cache_id}' not found or expired")
+            if cache_id not in self._cache:
+                raise KeyError(f"Cache entry '{cache_id}' not found or expired")
 
-        entry = self._cache[cache_id]
+            entry = self._cache[cache_id]
 
-        # Move to end (LRU update)
-        self._cache.move_to_end(cache_id)
+            # Move to end (LRU update)
+            self._cache.move_to_end(cache_id)
 
-        total_chars = len(entry.content)
+            total_chars = len(entry.content)
 
-        # Validate offset
-        if offset < 0:
-            offset = 0
-        if offset >= total_chars:
-            # Return empty chunk if offset beyond content
+            # Validate offset
+            if offset < 0:
+                offset = 0
+            if offset >= total_chars:
+                # Return empty chunk if offset beyond content
+                return {
+                    "chunk": "",
+                    "offset": offset,
+                    "size": 0,
+                    "total_chars": total_chars,
+                    "remaining_chars": 0,
+                    "cache_id": cache_id,
+                    "tool_name": entry.tool_name,
+                    "instance_id": entry.instance_id
+                }
+
+            # Calculate actual size
+            if size <= 0:
+                # Return all remaining
+                actual_size = total_chars - offset
+            else:
+                actual_size = min(size, total_chars - offset)
+
+            chunk = entry.content[offset:offset + actual_size]
+            remaining = total_chars - offset - actual_size
+
             return {
-                "chunk": "",
+                "chunk": chunk,
                 "offset": offset,
-                "size": 0,
+                "size": actual_size,
                 "total_chars": total_chars,
-                "remaining_chars": 0,
+                "remaining_chars": remaining,
                 "cache_id": cache_id,
                 "tool_name": entry.tool_name,
                 "instance_id": entry.instance_id
             }
-
-        # Calculate actual size
-        if size <= 0:
-            # Return all remaining
-            actual_size = total_chars - offset
-        else:
-            actual_size = min(size, total_chars - offset)
-
-        chunk = entry.content[offset:offset + actual_size]
-        remaining = total_chars - offset - actual_size
-
-        return {
-            "chunk": chunk,
-            "offset": offset,
-            "size": actual_size,
-            "total_chars": total_chars,
-            "remaining_chars": remaining,
-            "cache_id": cache_id,
-            "tool_name": entry.tool_name,
-            "instance_id": entry.instance_id
-        }
 
     def exists(self, cache_id: str) -> bool:
         """Check if a cache entry exists and is not expired.
@@ -173,8 +177,9 @@ class ResponseCache:
         Returns:
             True if entry exists and is valid
         """
-        self._evict_expired()
-        return cache_id in self._cache
+        with self._lock:
+            self._evict_expired()
+            return cache_id in self._cache
 
     def delete(self, cache_id: str) -> bool:
         """Delete a cache entry.
@@ -185,10 +190,11 @@ class ResponseCache:
         Returns:
             True if entry was deleted, False if not found
         """
-        if cache_id in self._cache:
-            del self._cache[cache_id]
-            return True
-        return False
+        with self._lock:
+            if cache_id in self._cache:
+                del self._cache[cache_id]
+                return True
+            return False
 
     def clear(self) -> int:
         """Clear all cache entries.
@@ -196,9 +202,10 @@ class ResponseCache:
         Returns:
             Number of entries cleared
         """
-        count = len(self._cache)
-        self._cache.clear()
-        return count
+        with self._lock:
+            count = len(self._cache)
+            self._cache.clear()
+            return count
 
     def stats(self) -> dict[str, Any]:
         """Get cache statistics.
@@ -206,12 +213,13 @@ class ResponseCache:
         Returns:
             dict with entry_count, max_entries, ttl_seconds
         """
-        self._evict_expired()
-        return {
-            "entry_count": len(self._cache),
-            "max_entries": self.max_entries,
-            "ttl_seconds": self.ttl_seconds
-        }
+        with self._lock:
+            self._evict_expired()
+            return {
+                "entry_count": len(self._cache),
+                "max_entries": self.max_entries,
+                "ttl_seconds": self.ttl_seconds
+            }
 
     def _evict_expired(self) -> int:
         """Remove entries older than TTL.
@@ -232,8 +240,9 @@ class ResponseCache:
         return len(expired)
 
 
-# Global cache instance
+# Global cache instance (thread-safe initialization)
 _response_cache: ResponseCache | None = None
+_cache_init_lock = threading.Lock()
 
 
 def get_cache() -> ResponseCache:
@@ -244,5 +253,7 @@ def get_cache() -> ResponseCache:
     """
     global _response_cache
     if _response_cache is None:
-        _response_cache = ResponseCache()
+        with _cache_init_lock:
+            if _response_cache is None:
+                _response_cache = ResponseCache()
     return _response_cache

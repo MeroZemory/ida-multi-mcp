@@ -26,7 +26,7 @@ def register_instance(pid: int, port: int, idb_path: str, **metadata) -> str:
     # We need to add parent directory to path to import from ida_multi_mcp
     parent_dir = str(Path(__file__).parent.parent.parent)
     if parent_dir not in sys.path:
-        sys.path.insert(0, parent_dir)
+        sys.path.append(parent_dir)
 
     from ida_multi_mcp.registry import InstanceRegistry, get_default_registry_path
 
@@ -45,7 +45,7 @@ def unregister_instance(instance_id: str) -> None:
     """
     parent_dir = str(Path(__file__).parent.parent.parent)
     if parent_dir not in sys.path:
-        sys.path.insert(0, parent_dir)
+        sys.path.append(parent_dir)
 
     from ida_multi_mcp.registry import InstanceRegistry, get_default_registry_path
 
@@ -66,7 +66,7 @@ def update_heartbeat(instance_id: str) -> None:
     """
     parent_dir = str(Path(__file__).parent.parent.parent)
     if parent_dir not in sys.path:
-        sys.path.insert(0, parent_dir)
+        sys.path.append(parent_dir)
 
     from ida_multi_mcp.registry import InstanceRegistry, get_default_registry_path
 

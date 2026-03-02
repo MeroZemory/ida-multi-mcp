@@ -17,7 +17,7 @@ import idaapi
 # Import registration functions (add parent to path for ida_multi_mcp imports)
 _pkg_dir = str(Path(__file__).parent.parent.parent)
 if _pkg_dir not in sys.path:
-    sys.path.insert(0, _pkg_dir)
+    sys.path.append(_pkg_dir)
 
 from ida_multi_mcp.plugin.registration import (
     register_instance,
