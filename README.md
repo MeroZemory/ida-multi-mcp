@@ -515,10 +515,10 @@ For issues, feature requests, or questions:
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=MeroZemory%2Fida-multi-mcp.git%2CMeroZemory%2Fida-multi-mcp&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=MeroZemory%2Fida-multi-mcp&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=MeroZemory/ida-multi-mcp.git%2CMeroZemory/ida-multi-mcp&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=MeroZemory/ida-multi-mcp.git%2CMeroZemory/ida-multi-mcp&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=MeroZemory/ida-multi-mcp.git%2CMeroZemory/ida-multi-mcp&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=MeroZemory/ida-multi-mcp&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=MeroZemory/ida-multi-mcp&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=MeroZemory/ida-multi-mcp&type=date&legend=top-left" />
  </picture>
 </a>
