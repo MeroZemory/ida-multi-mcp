@@ -539,6 +539,12 @@ def append_comments(
 # ============================================================================
 
 
+# Cap on the number of bytes a single undefine call may affect. Prevents a
+# stray `end` address or oversized `size` from wiping large regions of the
+# IDB. Mirrors this project's 1 MB memory read/write caps in spirit.
+_MAX_UNDEFINE_BYTES = 16 * 1024 * 1024
+
+
 @tool
 @idasync
 def define_func(items: list[DefineOp] | DefineOp) -> list[DefineResult]:
@@ -658,6 +664,18 @@ def undefine(items: list[UndefineOp] | UndefineOp) -> list[DefineResult]:
                     "addr": addr_str,
                     "start": hex(start_ea),
                     "error": f"Invalid range: {nbytes} bytes",
+                })
+                continue
+
+            if nbytes > _MAX_UNDEFINE_BYTES:
+                results.append({
+                    "addr": addr_str,
+                    "start": hex(start_ea),
+                    "error": (
+                        f"Range too large: {nbytes} bytes exceeds "
+                        f"_MAX_UNDEFINE_BYTES ({_MAX_UNDEFINE_BYTES}). "
+                        "Split into smaller undefine calls."
+                    ),
                 })
                 continue
 
