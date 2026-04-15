@@ -385,20 +385,20 @@ def analyze_component(
             })
 
     # --- Interface vs internal ---
+    # Use raw xrefs instead of get_callers() to avoid its default 50-caller cap,
+    # which could misclassify a function with >50 callers if all inspected ones
+    # are internal but a later one is external. Short-circuits on first external.
     interface_functions: list[str] = []
     internal_only: list[str] = []
     for ea in ea_set:
-        callers = get_callers(hex(ea))
         has_external = False
-        for c in (callers or []):
-            caller_addr = c.get("addr") or c.get("start_ea")
-            if isinstance(caller_addr, str):
-                try:
-                    caller_addr = int(caller_addr, 16)
-                except (ValueError, TypeError):
-                    has_external = True
-                    break
-            if caller_addr not in ea_set:
+        for xref in idautils.XrefsTo(ea, 0):
+            if not xref.iscode:
+                continue
+            if xref.type not in (idaapi.fl_CF, idaapi.fl_CN):
+                continue
+            caller_func = idaapi.get_func(xref.frm)
+            if caller_func is None or caller_func.start_ea not in ea_set:
                 has_external = True
                 break
         if has_external:
