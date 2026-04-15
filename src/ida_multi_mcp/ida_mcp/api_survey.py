@@ -138,10 +138,14 @@ def _build_metadata() -> SurveyMetadata:
 
     input_path = ida_nalt.get_input_file_path()
     try:
+        md5_h = hashlib.md5()
+        sha256_h = hashlib.sha256()
         with open(input_path, "rb") as f:
-            data = f.read()
-        md5 = hashlib.md5(data).hexdigest()
-        sha256 = hashlib.sha256(data).hexdigest()
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                md5_h.update(chunk)
+                sha256_h.update(chunk)
+        md5 = md5_h.hexdigest()
+        sha256 = sha256_h.hexdigest()
     except Exception:
         md5 = sha256 = "unavailable"
 
