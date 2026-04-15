@@ -38,6 +38,10 @@ from .utils import (
 _DECOMPILE_LINE_CAP = 100
 _TOP_STRINGS = 10
 _TOP_CONSTANTS = 10
+# Cap on the shared-string map returned by analyze_component. Sorted by
+# accessor count desc so the most-shared strings surface first. Mirrors
+# the bounded-output style used by survey_binary (e.g. root_functions[:100]).
+_MAX_STRING_USAGE = 50
 _BORING_CONSTANTS = frozenset({0, 1, -1, 0xFF, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF})
 
 
@@ -420,10 +424,14 @@ def analyze_component(
             if sval:
                 string_funcs[sval].add(fname)
 
+    # Sort by accessor count desc (most-shared first), break ties alphabetically.
+    # Capped at _MAX_STRING_USAGE to keep the response bounded for large components.
+    sorted_items = sorted(
+        ((s, fnames) for s, fnames in string_funcs.items() if len(fnames) >= 2),
+        key=lambda kv: (-len(kv[1]), kv[0]),
+    )
     string_usage = {
-        s: sorted(fnames)
-        for s, fnames in sorted(string_funcs.items())
-        if len(fnames) >= 2
+        s: sorted(fnames) for s, fnames in sorted_items[:_MAX_STRING_USAGE]
     }
 
     return {
