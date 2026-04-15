@@ -33,7 +33,7 @@ _SUBMODULES = [
     "rpc", "http", "framework",
     "api_core", "api_analysis", "api_memory", "api_types",
     "api_modify", "api_stack", "api_debug", "api_python", "api_resources",
-    "api_survey",
+    "api_survey", "api_composite",
 ]
 
 # Create a real sync stub with IDAError
