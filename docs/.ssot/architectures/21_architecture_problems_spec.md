@@ -6,195 +6,195 @@
 - This document explains architecture and does not redefine contract semantics.
 
 
-## 범위
-- 분석 대상: `ida-multi-mcp` 현재 아키텍처(2026-02-17)
-- 근거 소스: 기존 SSOT 문서 + 실제 코드(`src/ida_multi_mcp/**`) + 테스트(`tests/**`)
-- 목표: 현재 구조/기능의 문제점을 식별하고, 영향과 보완 명세를 확정
+## Scope
+- Subject: current `ida-multi-mcp` architecture (2026-02-17)
+- Evidence sources: existing SSOT documents + actual code (`src/ida_multi_mcp/**`) + tests (`tests/**`)
+- Goal: identify problems in the current structure/features and finalize impact and remediation spec
 
-## 심각도 기준
-- `P0`: 기능/신뢰성/안전성에 즉시 치명적 영향
-- `P1`: 운영 장애/데이터 불일치/강한 품질 저하 위험
-- `P2`: 중기적 유지보수/정합성/확장성 저해
-- `P3`: 경미한 결함 또는 문서/진단 품질 문제
+## Severity Criteria
+- `P0`: immediate, critical impact on functionality/reliability/safety
+- `P1`: operational outage / data inconsistency / serious quality degradation risk
+- `P2`: medium-term maintainability/consistency/extensibility degradation
+- `P3`: minor defects or documentation/diagnostic quality issues
 
-## 문제 명세
+## Problem Specifications
 
 ### P0
 
-#### AP-P0-01 만료 사유 필드 키 불일치로 원인 추적 실패
-- 근거:
-  - `src/ida_multi_mcp/registry.py:244`는 `expired.reason` 저장
-  - `src/ida_multi_mcp/router.py:189`, `src/ida_multi_mcp/router.py:199`는 `expire_reason` 조회
-- 문제:
-  - 만료 원인이 항상 `unknown`으로 표기되어 복구 가이드가 오염됨.
-- 영향:
-  - 사고 대응 시 root-cause 추적 실패, 자동 복구 힌트 품질 저하.
-- 명세(수정 요구):
-  - 라우터는 `reason`을 1순위로 읽고, 하위 호환으로 `expire_reason` fallback 허용.
+#### AP-P0-01 Expiry-reason field key mismatch causes cause-tracking failure
+- Evidence:
+  - `src/ida_multi_mcp/registry.py:244` stores `expired.reason`
+  - `src/ida_multi_mcp/router.py:189`, `src/ida_multi_mcp/router.py:199` look up `expire_reason`
+- Problem:
+  - Expiry reason is always reported as `unknown`, polluting recovery guidance.
+- Impact:
+  - Root-cause tracking fails during incident response; auto-recovery hint quality degrades.
+- Spec (fix required):
+  - Router should read `reason` first and allow `expire_reason` as a fallback for backward compatibility.
 
-#### AP-P0-02 사용자 지정 레지스트리 경로와 플러그인 등록 경로 분리
-- 근거:
-  - 서버/CLI는 `--registry` 지원: `src/ida_multi_mcp/__main__.py:909`, `src/ida_multi_mcp/__main__.py:925`
-  - 플러그인 등록은 고정 경로만 사용: `src/ida_multi_mcp/plugin/registration.py:28`, `src/ida_multi_mcp/plugin/registration.py:50`, `src/ida_multi_mcp/plugin/registration.py:73`
-- 문제:
-  - 서버를 커스텀 레지스트리로 띄우면 IDA 플러그인이 다른 파일에 등록하여 인스턴스가 안 보임.
-- 영향:
-  - “인스턴스 없음” 오탐, 실제 운영 불능.
-- 명세(수정 요구):
-  - 플러그인 등록 경로를 환경변수/설정으로 주입 가능하게 통일.
+#### AP-P0-02 User-specified registry path diverges from plugin registration path
+- Evidence:
+  - Server/CLI support `--registry`: `src/ida_multi_mcp/__main__.py:909`, `src/ida_multi_mcp/__main__.py:925`
+  - Plugin registration uses a fixed path only: `src/ida_multi_mcp/plugin/registration.py:28`, `src/ida_multi_mcp/plugin/registration.py:50`, `src/ida_multi_mcp/plugin/registration.py:73`
+- Problem:
+  - Launching the server with a custom registry causes the IDA plugin to register in a different file, making instances invisible.
+- Impact:
+  - False "no instances" reports and real operational failure.
+- Spec (fix required):
+  - Unify the plugin registration path so it can be injected via environment variable/config.
 
 ### P1
 
-#### AP-P1-01 레지스트리 JSON 손상 시 전체 기능 중단
-- 근거: `src/ida_multi_mcp/registry.py:65-66`
-- 문제:
-  - `json.load` 예외를 복구하지 않아 한 번의 파일 손상으로 전체 명령이 실패할 수 있음.
-- 영향:
-  - 서버 시작 실패, list/route 전면 중단.
-- 명세(수정 요구):
-  - 손상 감지 시 백업 격리(`instances.json.bak`) + 기본 구조 자동 복구.
+#### AP-P1-01 Corrupt registry JSON halts all functionality
+- Evidence: `src/ida_multi_mcp/registry.py:65-66`
+- Problem:
+  - `json.load` exceptions are not recovered, so a single file corruption can fail all commands.
+- Impact:
+  - Server startup failure; list/route fully blocked.
+- Spec (fix required):
+  - On corruption detection, quarantine as backup (`instances.json.bak`) and auto-recover to the default structure.
 
-#### AP-P1-02 decompile_to_file 단일 모드 파일명 충돌로 결과 유실
-- 근거: `src/ida_multi_mcp/server.py:433-437`
-- 문제:
-  - 동일 이름 함수(네임스페이스/오버로드/demangle 충돌) 시 앞선 파일이 덮어써짐.
-- 영향:
-  - 결과 누락/왜곡, 분석 재현성 저하.
-- 명세(수정 요구):
-  - 파일명에 주소를 포함(`{safe_name}_{addr}.c`)하거나 충돌 시 suffix 증가.
+#### AP-P1-02 decompile_to_file single-mode filename collisions drop results
+- Evidence: `src/ida_multi_mcp/server.py:433-437`
+- Problem:
+  - With same-name functions (namespace/overload/demangle collisions), earlier files are overwritten.
+- Impact:
+  - Missing or distorted results; reduced reproducibility of analysis.
+- Spec (fix required):
+  - Include the address in the filename (`{safe_name}_{addr}.c`), or increment a suffix on collision.
 
-#### AP-P1-03 binary 변경 검증이 파일명 기반이라 오탐/미탐 가능
-- 근거:
-  - 이름 비교: `src/ida_multi_mcp/router.py:122-123`
-  - 설명상 path 대신 name 사용: `src/ida_multi_mcp/router.py:88-89`
-- 문제:
-  - 서로 다른 경로의 동일 파일명 샘플에서 잘못된 instance를 정상으로 판단 가능.
-- 영향:
-  - 교차 바이너리 오염 분석 위험.
-- 명세(수정 요구):
-  - `module` + `input_file` + `idb_path` 복합 검증으로 강화.
+#### AP-P1-03 Binary-change verification is filename-based, allowing false positives/negatives
+- Evidence:
+  - Name comparison: `src/ida_multi_mcp/router.py:122-123`
+  - Uses name rather than path: `src/ida_multi_mcp/router.py:88-89`
+- Problem:
+  - Same-filename samples under different paths can be incorrectly judged as matching.
+- Impact:
+  - Risk of cross-binary contamination in analysis.
+- Spec (fix required):
+  - Strengthen via composite verification of `module` + `input_file` + `idb_path`.
 
-#### AP-P1-04 binary 검증 실패 시 fail-open 정책으로 stale 라우팅 허용
-- 근거: `src/ida_multi_mcp/router.py:118-120`
-- 문제:
-  - 메타데이터 조회 실패 시 요청을 계속 통과시켜 stale instance 오배달 가능.
-- 영향:
-  - 잘못된 대상에서 tool 실행.
-- 명세(수정 요구):
-  - 최소 `warning` 메타 반환 또는 configurable strict mode(default strict 권장).
+#### AP-P1-04 Fail-open policy on binary verification permits stale routing
+- Evidence: `src/ida_multi_mcp/router.py:118-120`
+- Problem:
+  - Requests still pass when metadata lookup fails, risking misrouting to a stale instance.
+- Impact:
+  - Tools may execute against the wrong target.
+- Spec (fix required):
+  - At minimum, return a `warning` meta; or provide a configurable strict mode (default strict recommended).
 
-#### AP-P1-05 설치 전제 실패(ImportError) 이후에도 설치 성공 흐름 지속
-- 근거: `src/ida_multi_mcp/__main__.py:811-814` 이후 설치 계속(`:815+`)
-- 문제:
-  - 의존 패키지 미설치 상태에서도 plugin 배치/성공 메시지가 진행됨.
-- 영향:
-  - 사용자에게 성공 오인 제공, 실제 로드 실패.
-- 명세(수정 요구):
-  - prerequisite 실패 시 non-zero exit 및 설치 중단.
+#### AP-P1-05 Install flow continues to succeed after prerequisite ImportError
+- Evidence: install continues after `src/ida_multi_mcp/__main__.py:811-814` (`:815+`)
+- Problem:
+  - Even with missing dependencies, plugin deployment and success messages proceed.
+- Impact:
+  - Users are misled to think installation succeeded while load actually fails.
+- Spec (fix required):
+  - On prerequisite failure, exit non-zero and abort installation.
 
-#### AP-P1-06 uninstall이 전체 `~/.ida-mcp` 디렉터리를 재귀 삭제
-- 근거: `src/ida_multi_mcp/__main__.py:866-869`
-- 문제:
-  - 향후 다른 상태파일/운영 메타 포함 시 과삭제 위험.
-- 영향:
-  - 운영 상태/포렌식 히스토리 유실.
-- 명세(수정 요구):
-  - 소유 파일만 선택 삭제(allowlist) 또는 백업 후 삭제.
+#### AP-P1-06 Uninstall recursively removes the entire `~/.ida-mcp` directory
+- Evidence: `src/ida_multi_mcp/__main__.py:866-869`
+- Problem:
+  - Risk of over-deletion if future state files / operational metadata are stored there.
+- Impact:
+  - Loss of operational state / forensic history.
+- Spec (fix required):
+  - Delete only owned files (allowlist), or back up before deletion.
 
 ### P2
 
-#### AP-P2-01 IDA tool 실행 전 `active_instance` 선검증이 라우팅 계약과 충돌
-- 근거: `src/ida_multi_mcp/server.py:223-230`
-- 문제:
-  - 실제 라우팅은 명시적 `instance_id` 기반인데, 사전 `active` 체크 실패 시 전체 거부 가능.
-- 영향:
-  - 경계 상태에서 false negative 오류.
-- 명세(수정 요구):
-  - 사전 체크 제거하고 라우터에 위임.
+#### AP-P2-01 Pre-validating `active_instance` before IDA tool execution conflicts with the routing contract
+- Evidence: `src/ida_multi_mcp/server.py:223-230`
+- Problem:
+  - Actual routing is based on explicit `instance_id`, yet a failed pre-check for `active` can reject the entire call.
+- Impact:
+  - False-negative errors in edge states.
+- Spec (fix required):
+  - Remove the pre-check and delegate to the router.
 
-#### AP-P2-02 정적 툴 스키마가 실제 기능 표면보다 축소되어 계약 변동성 존재
-- 근거:
-  - 정적 스키마 34개(`ida_tool_schemas.json`)
-  - 실제 API는 더 많은 도구/리소스(`api_debug`, `api_resources`)
-- 문제:
-  - IDA 미연결 시 툴 목록과 연결 후 목록이 크게 달라짐.
-- 영향:
-  - 클라이언트 tool planning 불안정.
-- 명세(수정 요구):
-  - 빌드 시 전체 스키마 자동 생성/동기화 파이프라인 도입.
+#### AP-P2-02 Static tool schema is narrower than the actual feature surface, introducing contract drift
+- Evidence:
+  - Static schema: 34 tools (`ida_tool_schemas.json`)
+  - Actual APIs include more tools/resources (`api_debug`, `api_resources`)
+- Problem:
+  - Tool listings differ significantly between IDA-disconnected and IDA-connected states.
+- Impact:
+  - Unstable client-side tool planning.
+- Spec (fix required):
+  - Introduce a build-time pipeline that auto-generates/syncs the full schema.
 
-#### AP-P2-03 decompile_to_file의 대규모 실행 보호장치 부재
-- 근거:
-  - `all=true` 경로: `src/ida_multi_mcp/server.py:340-379`
-  - IDA 단일 스레드 제약: `src/ida_multi_mcp/ida_mcp/sync.py:129-136`
-- 문제:
-  - 함수 수가 큰 바이너리에서 장시간 블로킹/실질적 서비스 정지.
-- 영향:
-  - 장기 작업 중 다른 요청 불능.
-- 명세(수정 요구):
-  - 함수 수 상한 확인/확인 프롬프트/진행률+취소 강제 지원.
+#### AP-P2-03 decompile_to_file lacks safeguards for large-scale execution
+- Evidence:
+  - `all=true` path: `src/ida_multi_mcp/server.py:340-379`
+  - IDA single-thread constraint: `src/ida_multi_mcp/ida_mcp/sync.py:129-136`
+- Problem:
+  - For binaries with many functions, long blocking effectively halts the service.
+- Impact:
+  - Other requests stall during long jobs.
+- Spec (fix required):
+  - Enforce function-count caps, confirmation prompts, and progress + cancellation support.
 
-#### AP-P2-04 라우터 오류 응답의 instance_id가 실제 ID를 잃어버림
-- 근거: `src/ida_multi_mcp/router.py:163` (`instance_info.get("id", "unknown")`)
-- 문제:
-  - `instance_info`에는 `id` 필드가 없어 대부분 `unknown` 기록.
-- 영향:
-  - 장애 진단 난이도 상승.
-- 명세(수정 요구):
-  - 호출 컨텍스트의 `instance_id`를 명시적으로 전달/포함.
+#### AP-P2-04 Router error responses lose the actual instance_id
+- Evidence: `src/ida_multi_mcp/router.py:163` (`instance_info.get("id", "unknown")`)
+- Problem:
+  - `instance_info` has no `id` field, so `unknown` is recorded in most cases.
+- Impact:
+  - Harder incident diagnosis.
+- Spec (fix required):
+  - Explicitly pass/include the caller-context `instance_id`.
 
-#### AP-P2-05 health cleanup 함수의 timeout 파라미터가 실질적으로 미사용
-- 근거:
-  - 시그니처: `src/ida_multi_mcp/health.py:96`
-  - 로직은 process alive만 사용: `src/ida_multi_mcp/health.py:116-121`
-- 문제:
-  - API 계약과 동작 불일치.
-- 영향:
-  - 유지보수자 오해 및 잘못된 운영 튜닝.
-- 명세(수정 요구):
-  - 파라미터 제거 또는 heartbeat 기반 cleanup 실제 반영.
+#### AP-P2-05 health cleanup function's timeout parameter is effectively unused
+- Evidence:
+  - Signature: `src/ida_multi_mcp/health.py:96`
+  - Logic uses only process-alive: `src/ida_multi_mcp/health.py:116-121`
+- Problem:
+  - API contract does not match behavior.
+- Impact:
+  - Maintainer confusion and incorrect operational tuning.
+- Spec (fix required):
+  - Remove the parameter, or actually implement heartbeat-based cleanup.
 
-#### AP-P2-06 설치 문구/명령 표기가 실제 CLI 플래그와 불일치
-- 근거:
-  - 로더 문구: `src/ida_multi_mcp/plugin/ida_multi_mcp_loader.py:13` (`ida-multi-mcp install`)
-  - 실제 CLI는 `--install`: `src/ida_multi_mcp/__main__.py:889`
-- 문제:
-  - 현장 설치 시 오조작 가능.
-- 영향:
-  - 온보딩 실패율 상승.
-- 명세(수정 요구):
-  - 문구를 실제 명령으로 정정.
+#### AP-P2-06 Install messaging/commands do not match actual CLI flags
+- Evidence:
+  - Loader text: `src/ida_multi_mcp/plugin/ida_multi_mcp_loader.py:13` (`ida-multi-mcp install`)
+  - Actual CLI is `--install`: `src/ida_multi_mcp/__main__.py:889`
+- Problem:
+  - Mis-operation possible during on-site install.
+- Impact:
+  - Higher onboarding failure rate.
+- Spec (fix required):
+  - Correct the wording to match the actual command.
 
 ### P3
 
-#### AP-P3-01 레지스트리/캐시 접근 권한 하드닝 미명세
-- 근거:
-  - 레지스트리 생성 시 권한 정책 없음: `src/ida_multi_mcp/registry.py:37`
-  - 캐시는 평문 in-memory, 보호 경계 문서화 미흡: `src/ida_multi_mcp/cache.py`
-- 문제:
-  - 로컬 멀티유저 환경에서 최소권한 정책 불명확.
-- 영향:
-  - 보안 감사 시 지적 가능.
-- 명세(수정 요구):
-  - 파일 생성 권한(예: 600) 명시/강제, 운영 가이드 추가.
+#### AP-P3-01 Registry/cache access-permission hardening is unspecified
+- Evidence:
+  - No permission policy at registry creation: `src/ida_multi_mcp/registry.py:37`
+  - Cache is plaintext in-memory; protection boundaries poorly documented: `src/ida_multi_mcp/cache.py`
+- Problem:
+  - Unclear least-privilege policy in local multi-user environments.
+- Impact:
+  - Potential findings in security audits.
+- Spec (fix required):
+  - Specify/enforce file-creation permissions (e.g., 600); add operational guidance.
 
-#### AP-P3-02 테스트 커버리지가 핵심 아키텍처 경로 대비 제한적
-- 근거:
-  - 현재 테스트 4건 중심: `tests/test_router_requires_instance_id.py`, `tests/test_install_factory_droid.py`, `tests/test_install_windows_settings_fallback.py`, `tests/test_list_instances_schema.py`
-- 문제:
-  - registry 복구/rediscovery/decompile_to_file/plugin lifecycle 경로가 비검증.
-- 영향:
-  - 회귀 위험 상시 존재.
-- 명세(수정 요구):
-  - 고위험 경로 우선 테스트 셋 추가.
+#### AP-P3-02 Test coverage is limited relative to core architecture paths
+- Evidence:
+  - Currently 4 tests: `tests/test_router_requires_instance_id.py`, `tests/test_install_factory_droid.py`, `tests/test_install_windows_settings_fallback.py`, `tests/test_list_instances_schema.py`
+- Problem:
+  - Registry recovery / rediscovery / decompile_to_file / plugin lifecycle paths are unverified.
+- Impact:
+  - Persistent regression risk.
+- Spec (fix required):
+  - Add a prioritized test set covering high-risk paths.
 
-## 우선순위 실행 계획
-1. P0 즉시 수정: `AP-P0-01`, `AP-P0-02`
-2. P1 안정화: `AP-P1-01`~`AP-P1-06`
-3. P2 계약 정합성 개선: `AP-P2-*`
-4. P3 운영/품질 강화
+## Priority Execution Plan
+1. Immediate P0 fixes: `AP-P0-01`, `AP-P0-02`
+2. P1 stabilization: `AP-P1-01`~`AP-P1-06`
+3. P2 contract-consistency improvements: `AP-P2-*`
+4. P3 operational/quality hardening
 
-## 태스크포스 결론
-- 현재 아키텍처는 "멀티 인스턴스 MCP 라우팅" 핵심 목적은 달성했으나,
-  - 만료 사유/레지스트리 경로/복구 내구성 영역에서 즉시 개선 필요,
-  - 대용량 실행 제어 및 테스트 체계 보강 없이는 운영 확장 시 장애 확률이 높다.
+## Task-force Conclusion
+- The current architecture achieves its core goal of "multi-instance MCP routing", but:
+  - Immediate improvements are needed in expiry-reason handling, registry-path unification, and recovery durability,
+  - Without large-job execution control and a strengthened test regime, operational scale-up carries a high probability of incidents.

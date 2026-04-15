@@ -6,21 +6,21 @@
 - This document explains architecture and does not redefine contract semantics.
 
 
-## 병목
-- 가장 큰 병목은 IDA 단일 메인 스레드
-- `decompile(all)`은 함수 수에 선형 비례
-- JSON 직렬화/대형 응답 전송 비용 큼
+## Bottlenecks
+- The dominant bottleneck is IDA's single main thread
+- `decompile(all)` scales linearly with the number of functions
+- JSON serialization and large-response transfers are expensive
 
-## 완화 기법
-- large output truncation + cache pagination
-- `decompile_to_file`에서 `list_funcs` 페이지네이션(500 단위)
-- stale cleanup으로 불필요 라우팅 감소
+## Mitigations
+- Large-output truncation + cache pagination
+- `decompile_to_file` paginates via `list_funcs` (batches of 500)
+- Stale cleanup reduces unnecessary routing
 
-## 스케일 한계
-- 인스턴스 수 증가는 가능하나 각 인스턴스 내부는 single-thread
-- 다중 클라이언트 경쟁시 `instance_id` 분리로 교차 충돌 최소화
+## Scaling Limits
+- Increasing instance count is possible, but each instance is internally single-threaded
+- Splitting by `instance_id` minimizes cross-conflict between multiple clients
 
-## 권장 운영
-- 대형 바이너리는 먼저 `list_funcs` count/offset으로 탐색
-- bulk 작업은 분할(batch) 실행
+## Operational Recommendations
+- For large binaries, explore via `list_funcs` count/offset first
+- Split bulk operations into batches
 

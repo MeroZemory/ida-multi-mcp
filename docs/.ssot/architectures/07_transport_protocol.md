@@ -6,20 +6,20 @@
 - This document explains architecture and does not redefine contract semantics.
 
 
-## 전송 계층
+## Transport Layers
 - Client <-> Aggregator: MCP stdio
 - Aggregator <-> IDA instance: HTTP JSON-RPC (`POST /mcp`)
 
-## 프로토콜 호출
-중앙 서버 기준 핵심 메서드:
-- `tools/list`: 로컬 tool cache 반환
-- `tools/call`: local 관리도구 또는 원격 IDA 호출
+## Protocol Calls
+Central-server-side core methods:
+- `tools/list`: returns the local tool cache
+- `tools/call`: invokes a local management tool or a remote IDA tool
 
-IDA 쪽(zeromcp) 제공:
+Provided by the IDA side (zeromcp):
 - `initialize`, `ping`, `tools/*`, `resources/*`, `prompts/*`, `notifications/cancelled`
 
-## 라우팅 계약
-- `instance_id` 누락 시 즉시 오류
-- forwarding 전에 `arguments.instance_id` 제거
-- IDA 응답 envelope 그대로 존중, 필요 시 structured 보정
+## Routing Contract
+- Immediate error if `instance_id` is missing
+- Strip `arguments.instance_id` before forwarding
+- Respect the IDA response envelope as-is; apply structured normalization only when necessary
 

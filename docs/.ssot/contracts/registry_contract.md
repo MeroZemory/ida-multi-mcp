@@ -4,11 +4,11 @@ Last updated: 2026-02-17
 Version: v1
 
 ## Authority
-이 계약은 instance registry 파일 경로/스키마/복구 동작을 정의한다.
+This contract defines the instance registry file path, schema, and recovery behavior.
 
 ## Path Resolution
-- `IDA_MULTI_MCP_REGISTRY_PATH` 환경변수가 있으면 해당 경로를 사용한다.
-- 없으면 `~/.ida-mcp/instances.json`을 사용한다.
+- If the `IDA_MULTI_MCP_REGISTRY_PATH` environment variable is set, use that path.
+- Otherwise, use `~/.ida-mcp/instances.json`.
 
 ## Required Top-level Keys
 - `instances`
@@ -17,7 +17,7 @@ Version: v1
 
 ## Lifecycle Invariants
 - register -> heartbeat update -> expire/unregister
-- 손상 JSON 감지 시 `*.corrupt-<ts>`로 격리 후 빈 기본 구조로 복구
+- On corrupt-JSON detection, quarantine as `*.corrupt-<ts>` and recover with an empty default structure.
 
 ## Traceability
 - Implementation: `src/ida_multi_mcp/registry.py`

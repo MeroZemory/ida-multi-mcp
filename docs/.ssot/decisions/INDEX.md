@@ -11,4 +11,4 @@ Status: Active
 
 ## Source
 - Summary: `docs/.ssot/architectures/20_adr_summary.md`
-- Follow-up: ADR 파일 분할은 `docs/.ssot/TODO.md` 추적
+- Follow-up: ADR file splitting is tracked in `docs/.ssot/TODO.md`

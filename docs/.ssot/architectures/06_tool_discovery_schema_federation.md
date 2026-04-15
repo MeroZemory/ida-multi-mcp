@@ -6,21 +6,21 @@
 - This document explains architecture and does not redefine contract semantics.
 
 
-## 소스
-- 정적 스키마: `src/ida_multi_mcp/ida_tool_schemas.json` (34개)
-- 관리 도구: 서버 내장 4개
-- 동적 스키마: 연결된 IDA 인스턴스 `tools/list`
+## Sources
+- Static schema: `src/ida_multi_mcp/ida_tool_schemas.json` (34 tools)
+- Management tools: 4 built into the server
+- Dynamic schema: `tools/list` from the connected IDA instance
 
-## 연합 규칙
-- 모든 IDA tool inputSchema에 `instance_id`를 required로 주입
-- `py_eval`, `list_funcs` 설명에 싱글스레드 경고 추가
-- outputSchema가 object가 아니면 `{result: T}` wrapper로 강제
+## Federation Rules
+- Inject `instance_id` as a required field into every IDA tool's inputSchema
+- Add a single-thread warning to descriptions of `py_eval` and `list_funcs`
+- If outputSchema is not an object, wrap with `{result: T}` to force object shape
 
-## 가시성 전략
-- IDA가 없어도 static schema로 도구가 보이게 함
-- IDA 연결 시 첫 responsive 인스턴스 기준으로 최신 schema 반영
+## Visibility Strategy
+- Tools remain visible via the static schema even without IDA
+- On IDA connection, reflect the latest schema from the first responsive instance
 
-## 확장 툴
-- `api_debug`는 `@ext("dbg")`로 extension gated
-- 기본 사용 흐름에서 디버그 툴은 숨김 가능
+## Extension Tools
+- `api_debug` is extension-gated via `@ext("dbg")`
+- Debug tools can be hidden from the default usage flow
 

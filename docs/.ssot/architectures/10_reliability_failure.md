@@ -6,22 +6,22 @@
 - This document explains architecture and does not redefine contract semantics.
 
 
-## 주요 실패 시나리오
-- IDA 미연결 상태에서 tool call
-- 없는/만료된 instance_id 사용
-- IDA 프로세스 종료 후 stale registry
-- HTTP 연결 실패/timeout
+## Primary Failure Scenarios
+- Tool call while no IDA is connected
+- Use of a missing/expired `instance_id`
+- Stale registry after IDA process exit
+- HTTP connection failure/timeout
 
-## 대응 전략
-- 사전 오류 메시지 + 복구 힌트 제공
-- `list_instances`로 현재 상태 유도
-- startup cleanup으로 dead process 정리
-- rediscovery로 재등록 자동 복원
+## Response Strategies
+- Provide proactive error messages and recovery hints
+- Guide users to current state via `list_instances`
+- Clean up dead processes at startup
+- Auto-recover via rediscovery and re-registration
 
-## degraded 동작
-- metadata 조회 실패 시 binary 검증은 fail-open(True)
-- tools discovery 실패 시 static schema만 제공
+## Degraded Behavior
+- On metadata-lookup failure, binary verification is fail-open (True)
+- On tool-discovery failure, serve only the static schema
 
-## 운영 포인트
-- 오류 응답이 사람이 읽을 수 있는 힌트를 포함하도록 설계됨
+## Operational Notes
+- Error responses are designed to include human-readable hints
 

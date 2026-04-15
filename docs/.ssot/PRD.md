@@ -5,24 +5,24 @@ Status: Active
 Change class: B (scope/architecture)
 
 ## 1. Product Goal
-`ida-multi-mcp`는 단일 MCP 엔드포인트를 통해 다중 IDA 인스턴스에 안전하게 라우팅되는 분석 환경을 제공한다.
+`ida-multi-mcp` provides an analysis environment that safely routes to multiple IDA instances through a single MCP endpoint.
 
 ## 2. Core Requirements
-- 인스턴스별 명시 라우팅: 모든 IDA tool call은 `instance_id`를 요구한다.
-- 멀티 인스턴스 운영: 동시 다중 바이너리 분석을 지원한다.
-- 도구 표면 안정성: static + dynamic schema federation으로 툴 가시성을 유지한다.
-- 설치/운영 실용성: cross-platform plugin 설치와 MCP client 구성 자동화를 지원한다.
+- Explicit per-instance routing: every IDA tool call requires `instance_id`.
+- Multi-instance operation: supports concurrent analysis of multiple binaries.
+- Tool surface stability: maintains tool visibility via static + dynamic schema federation.
+- Install/operational practicality: supports cross-platform plugin installation and MCP client configuration automation.
 
 ## 3. In Scope
-- Registry 기반 인스턴스 lifecycle 관리
-- Router 기반 `instance_id` 강제 디스패치
-- 대형 응답 캐시/분할 조회
+- Registry-based instance lifecycle management
+- Router-based `instance_id` enforced dispatch
+- Cache/paged retrieval of large responses
 - IDA plugin auto-load/auto-register
 
 ## 4. Out of Scope
-- 외부 공개 HTTP API 플랫폼
-- DB 기반 영속 스토리지
-- 운영 온콜 서비스(runbook 필요 서비스)
+- External public HTTP API platform
+- DB-backed persistent storage
+- On-call operational services (services requiring a runbook)
 
 ## 5. Project Profile
 ```yaml

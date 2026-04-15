@@ -6,24 +6,24 @@
 - This document explains architecture and does not redefine contract semantics.
 
 
-## 로그 채널
-- 중앙 서버: stderr/print 기반 상태 로그
-- 플러그인: IDA 콘솔 로그
+## Log Channels
+- Central server: status logs via stderr/print
+- Plugin: IDA console logs
 
-## 관찰 가능한 상태
-- instance 등록/해제/정리
-- auto-discovery 성공/실패
-- tool discovery 실패 원인
-- heartbeat 오류
+## Observable State
+- Instance registration/deregistration/cleanup
+- Auto-discovery success/failure
+- Tool-discovery failure causes
+- Heartbeat errors
 
-## 운영 진단 루틴
-1. `ida-multi-mcp --list` 확인
-2. IDA 콘솔에서 plugin startup 로그 확인
-3. registry 파일(`~/.ida-mcp/instances.json`) 직접 점검
-4. 필요 시 `refresh_tools` 수행
+## Operational Diagnostic Routine
+1. Check `ida-multi-mcp --list`
+2. Verify plugin startup logs in the IDA console
+3. Inspect the registry file (`~/.ida-mcp/instances.json`) directly
+4. Run `refresh_tools` if needed
 
-## 개선 여지
-- 구조화 로그(JSON) 부재
-- 메트릭(exporter) 부재
-- trace ID 기반 request 추적 미구현
+## Improvement Opportunities
+- No structured logs (JSON)
+- No metrics (exporter)
+- No trace-ID-based request tracing
 

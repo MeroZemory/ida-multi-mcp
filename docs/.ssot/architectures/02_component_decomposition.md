@@ -6,7 +6,7 @@
 - This document explains architecture and does not redefine contract semantics.
 
 
-## 최상위 컴포넌트
+## Top-level Components
 - MCP Aggregator Server: `server.py`
 - Router: `router.py`
 - Registry: `registry.py`
@@ -16,19 +16,19 @@
 - Plugin Runtime: `plugin/ida_multi_mcp.py`
 - IDA Tool Provider: `ida_mcp/*`
 
-## 서버 내부 분해
-- Management tools(local): `list_instances`, `refresh_tools`, `get_cached_output`, `decompile_to_file`
-- IDA tools(proxy): 정적 스키마(`ida_tool_schemas.json`) + 동적 툴 목록 통합
-- MCP override: `tools/list`, `tools/call` 커스터마이즈
+## Server Internal Decomposition
+- Management tools (local): `list_instances`, `refresh_tools`, `get_cached_output`, `decompile_to_file`
+- IDA tools (proxy): static schema (`ida_tool_schemas.json`) + dynamic tool-list federation
+- MCP override: customization of `tools/list`, `tools/call`
 
-## 플러그인 내부 분해
+## Plugin Internal Decomposition
 - Loader: `plugin/ida_multi_mcp_loader.py`
-- Runtime plugin: HTTP 서버 시작/정지 + registry 등록
+- Runtime plugin: HTTP server start/stop + registry registration
 - Registration adapter: `plugin/registration.py`
 - Lifecycle hooks: `IDB_Hooks.closebase`, `UI_Hooks.database_inited`
 
-## 도구 계층
-- Base 분석 도구: `api_core`, `api_analysis`, `api_memory`, `api_types`, `api_modify`, `api_stack`, `api_python`
-- 확장 디버그 도구: `api_debug` (`@ext("dbg")`)
-- 리소스: `api_resources` (`ida://...`)
+## Tool Layer
+- Base analysis tools: `api_core`, `api_analysis`, `api_memory`, `api_types`, `api_modify`, `api_stack`, `api_python`
+- Extended debug tools: `api_debug` (`@ext("dbg")`)
+- Resources: `api_resources` (`ida://...`)
 

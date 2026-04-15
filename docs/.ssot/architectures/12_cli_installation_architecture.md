@@ -6,23 +6,23 @@
 - This document explains architecture and does not redefine contract semantics.
 
 
-## CLI 표면
-- 기본: MCP 서버 실행
-- `--install`: IDA plugin loader 배치 + MCP client 설정 자동화
-- `--uninstall`: plugin/registry/client 설정 제거
-- `--list`: 등록 인스턴스 조회
-- `--config`: MCP 설정 JSON 출력
+## CLI Surface
+- Default: run the MCP server
+- `--install`: deploy the IDA plugin loader + automate MCP client configuration
+- `--uninstall`: remove plugin/registry/client configuration
+- `--list`: list registered instances
+- `--config`: print MCP configuration JSON
 
-## 설치 아키텍처
-- plugin loader를 IDA plugins 디렉토리에 symlink 우선 설치
-- 실패시 copy fallback
-- 다수 MCP 클라이언트 설정 파일(JSON/TOML) 자동 반영
+## Installation Architecture
+- Install the plugin loader into the IDA plugins directory, preferring a symlink
+- Fall back to copy on failure
+- Automatically update multiple MCP client config files (JSON/TOML)
 
-## 플랫폼 처리
-- Windows rename 실패(WinError 5) 대비 overwrite fallback
-- 각 OS별 config path 테이블 내장
+## Platform Handling
+- Windows rename failure (WinError 5) handled via overwrite fallback
+- Built-in per-OS config-path table
 
-## 운영 리스크
-- 클라이언트 프로세스가 설정 파일 잠금 중이면 설치 일부 스킵 가능
-- 재시작 필요 안내가 필수
+## Operational Risks
+- If a client process has a config file locked, part of installation may be skipped
+- A restart notice is mandatory
 
