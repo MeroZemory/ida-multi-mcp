@@ -388,10 +388,14 @@ def analyze_component(
     # Use raw xrefs instead of get_callers() to avoid its default 50-caller cap,
     # which could misclassify a function with >50 callers if all inspected ones
     # are internal but a later one is external. Short-circuits on first external.
+    # A function with zero call xrefs (entry point, exported, indirect-call
+    # target via data xref) is treated as interface — it cannot be reached
+    # from within the component, so by definition it is externally reachable.
     interface_functions: list[str] = []
     internal_only: list[str] = []
     for ea in ea_set:
         has_external = False
+        has_internal = False
         for xref in idautils.XrefsTo(ea, 0):
             if not xref.iscode:
                 continue
@@ -401,7 +405,8 @@ def analyze_component(
             if caller_func is None or caller_func.start_ea not in ea_set:
                 has_external = True
                 break
-        if has_external:
+            has_internal = True
+        if has_external or not has_internal:
             interface_functions.append(hex(ea))
         else:
             internal_only.append(hex(ea))
