@@ -23,7 +23,6 @@ This document is the entry point for the `ida-multi-mcp` documentation.
 - Decisions: `docs/.ssot/decisions/INDEX.md`
 - Architecture: `docs/.ssot/architectures/00_INDEX.md`
 - SSOT TODO: `docs/.ssot/TODO.md`
-- SSOT History: `docs/.ssot/HISTORY.md`
 - Ops roadmap: `docs/ops/ROADMAP.md`
 - Installation guide: `docs/installation.md`
 

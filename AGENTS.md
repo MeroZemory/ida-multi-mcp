@@ -10,7 +10,6 @@ Last updated: 2026-02-17
 - Do not redefine contract semantics outside `docs/.ssot/contracts/*`.
 - Use links + versions when referencing contracts.
 - Update absolute dates in modified docs.
-- Record significant SSOT changes in `docs/.ssot/HISTORY.md`.
 
 ## 3) Code/Docs Traceability
 - When changing architecture or behavior docs, include references to affected code paths.

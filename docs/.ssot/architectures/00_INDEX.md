@@ -20,7 +20,6 @@ Change class: B (scope/architecture)
 - Contracts: `docs/.ssot/contracts/INDEX.md`
 - Decisions: `docs/.ssot/decisions/INDEX.md`
 - SSOT TODO: `docs/.ssot/TODO.md`
-- SSOT History: `docs/.ssot/HISTORY.md`
 - Roadmap: `docs/ops/ROADMAP.md`
 
 ## Architecture Set
