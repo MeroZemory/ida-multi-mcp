@@ -567,6 +567,15 @@ def define_func(items: list[DefineOp] | DefineOp) -> list[DefineResult]:
             start_ea = parse_address(addr_str)
             end_ea = parse_address(end_str) if end_str else idaapi.BADADDR
 
+            if end_ea != idaapi.BADADDR and end_ea <= start_ea:
+                results.append({
+                    "addr": addr_str,
+                    "start": hex(start_ea),
+                    "end": hex(end_ea),
+                    "error": f"Invalid range: end ({hex(end_ea)}) must be greater than start ({hex(start_ea)})",
+                })
+                continue
+
             existing = idaapi.get_func(start_ea)
             if existing and existing.start_ea == start_ea:
                 results.append({
