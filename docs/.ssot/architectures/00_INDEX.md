@@ -10,7 +10,7 @@ Change class: B (scope/architecture)
 2. `docs/.ssot/PRD.md`
 3. `docs/.ssot/decisions/*`
 4. `docs/.ssot/architectures/*`
-5. `docs/phases/_completed/*`
+5. `docs/plans/_completed/*`
 6. `docs/ops/*`
 - 이 디렉터리는 아키텍처 설명 문서이며 Contracts 의미론을 재정의하지 않는다.
 

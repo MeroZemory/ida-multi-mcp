@@ -13,7 +13,7 @@ Status: Active
 2. `docs/.ssot/PRD.md`
 3. `docs/.ssot/decisions/*`
 4. `docs/.ssot/architectures/*`
-5. `docs/phases/_completed/*`
+5. `docs/plans/_completed/*`
 6. `docs/ops/*`
 
 ## Canonical Map

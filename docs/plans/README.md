@@ -1,9 +1,8 @@
-# Phases
+# Plans
 
-Last updated: 2026-02-17
+Last updated: 2026-04-15
 
-Phase directory naming:
-- Phase: `<number>-<phase-name>`
+Plan directory naming:
 - Plan: `<number>-<plan-name>`
 
 Optional plan subfolders (create only when applicable):
@@ -12,6 +11,8 @@ Optional plan subfolders (create only when applicable):
 - `wireframes/`
 - `test/`
 - `notes/`
+
+Completed plan archives live under `_completed/`.
 
 Current project applicability:
 - API specs: N/A (`http_api: false`)
