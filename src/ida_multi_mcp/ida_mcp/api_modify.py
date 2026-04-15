@@ -584,6 +584,16 @@ def define_func(items: list[DefineOp] | DefineOp) -> list[DefineResult]:
                     "error": "Function already exists at this address",
                 })
                 continue
+            if existing and existing.start_ea != start_ea:
+                results.append({
+                    "addr": addr_str,
+                    "start": hex(start_ea),
+                    "error": (
+                        f"Address {hex(start_ea)} is inside function at "
+                        f"{hex(existing.start_ea)}; cannot start a new function here"
+                    ),
+                })
+                continue
 
             if ida_funcs.add_func(start_ea, end_ea):
                 func = idaapi.get_func(start_ea)
