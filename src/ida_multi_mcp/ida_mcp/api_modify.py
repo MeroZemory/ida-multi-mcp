@@ -565,6 +565,13 @@ def define_func(items: list[DefineOp] | DefineOp) -> list[DefineResult]:
 
         try:
             start_ea = parse_address(addr_str)
+            if not idaapi.is_loaded(start_ea):
+                results.append({
+                    "addr": addr_str,
+                    "start": hex(start_ea),
+                    "error": f"Address {hex(start_ea)} is not mapped in the IDB",
+                })
+                continue
             end_ea = parse_address(end_str) if end_str else idaapi.BADADDR
 
             if end_ea != idaapi.BADADDR and end_ea <= start_ea:
@@ -633,6 +640,13 @@ def define_code(items: list[DefineOp] | DefineOp) -> list[DefineResult]:
 
         try:
             ea = parse_address(addr_str)
+            if not idaapi.is_loaded(ea):
+                results.append({
+                    "addr": addr_str,
+                    "ea": hex(ea),
+                    "error": f"Address {hex(ea)} is not mapped in the IDB",
+                })
+                continue
             length = ida_ua.create_insn(ea)
             if length > 0:
                 results.append({"addr": addr_str, "ea": hex(ea), "length": length})
@@ -669,6 +683,13 @@ def undefine(items: list[UndefineOp] | UndefineOp) -> list[DefineResult]:
 
         try:
             start_ea = parse_address(addr_str)
+            if not idaapi.is_loaded(start_ea):
+                results.append({
+                    "addr": addr_str,
+                    "start": hex(start_ea),
+                    "error": f"Address {hex(start_ea)} is not mapped in the IDB",
+                })
+                continue
 
             if end_str:
                 end_ea = parse_address(end_str)
