@@ -179,6 +179,17 @@ class TestCorruptionRecovery:
                            host="127.0.0.1")
         assert len(iid) >= 4
 
+    def test_recovers_from_nul_filled_file(self, tmp_path):
+        registry_path = str(tmp_path / "instances.json")
+        with open(registry_path, "wb") as f:
+            f.write(b"\x00" * 512)
+        reg = InstanceRegistry(registry_path)
+        iid = reg.register(pid=1, port=100, idb_path="/a.i64",
+                           host="127.0.0.1")
+        assert len(iid) >= 4
+        quarantined = list(tmp_path.glob("instances.json.corrupt-*"))
+        assert quarantined
+
     def test_strips_non_localhost_hosts_on_read(self, tmp_path):
         registry_path = str(tmp_path / "instances.json")
         data = {
