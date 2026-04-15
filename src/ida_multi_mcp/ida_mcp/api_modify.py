@@ -1,11 +1,15 @@
+from typing import TypedDict
+
 import idaapi
 import idautils
 import idc
-import ida_hexrays
 import ida_bytes
-import ida_typeinf
-import ida_frame
 import ida_dirtree
+import ida_frame
+import ida_funcs
+import ida_hexrays
+import ida_typeinf
+import ida_ua
 
 from .rpc import tool
 from .sync import idasync, IDAError
@@ -14,13 +18,34 @@ from .utils import (
     decompile_checked,
     refresh_decompiler_ctext,
     CommentOp,
+    CommentAppendOp,
     AsmPatchOp,
+    DefineOp,
+    UndefineOp,
     FunctionRename,
     GlobalRename,
     LocalRename,
     StackRename,
     RenameBatch,
 )
+
+
+class AppendCommentResult(TypedDict, total=False):
+    addr: str
+    scope: str
+    appended: bool
+    skipped: bool
+    error: str
+
+
+class DefineResult(TypedDict, total=False):
+    addr: str
+    ea: str
+    start: str
+    end: str
+    size: int
+    length: int
+    error: str
 
 
 # ============================================================================
@@ -415,3 +440,240 @@ def rename(batch: RenameBatch) -> dict:
         result["stack"] = _rename_stack(_normalize_items(batch["stack"]))
 
     return result
+
+
+# ============================================================================
+# Append-style Comment (non-destructive)
+# ============================================================================
+
+
+def _append_comment_text(current: str, new_text: str, *, dedupe: bool) -> tuple[str, bool]:
+    """Merge new_text into current. Returns (merged_text, skipped_as_duplicate)."""
+    normalized_new = new_text.strip()
+    if dedupe and normalized_new:
+        existing_entries = [line.strip() for line in current.splitlines()]
+        if normalized_new in existing_entries:
+            return current, True
+    if not current:
+        return new_text, False
+    if not new_text:
+        return current, False
+    joiner = "" if current.endswith("\n") else "\n"
+    return f"{current}{joiner}{new_text}", False
+
+
+@tool
+@idasync
+def append_comments(
+    items: list[CommentAppendOp] | CommentAppendOp,
+) -> list[AppendCommentResult]:
+    """Append comments at addresses, deduping exact text by default. Unlike
+    set_comments (which overwrites), this preserves existing annotations — use
+    it for incremental commentary. scope='auto' (default) writes a function
+    comment when addr is a function start, otherwise a line comment; force
+    with scope='func' or 'line'. dedupe=True skips writes when the exact
+    stripped text already appears on its own line."""
+    if isinstance(items, dict):
+        items = [items]
+
+    if len(items) > _MAX_BATCH_SIZE:
+        raise IDAError(f"Batch too large: maximum {_MAX_BATCH_SIZE} items per request")
+
+    results: list[AppendCommentResult] = []
+    for item in items:
+        addr_str = item.get("addr", "")
+        comment = item.get("comment", "")
+        scope = str(item.get("scope", "auto") or "auto").lower()
+        dedupe = bool(item.get("dedupe", True))
+
+        try:
+            ea = parse_address(addr_str)
+            if scope not in {"auto", "func", "line"}:
+                results.append({"addr": addr_str, "error": f"Unsupported scope: {scope}"})
+                continue
+
+            fn = idaapi.get_func(ea)
+            use_func_comment = scope == "func" or (
+                scope == "auto" and fn is not None and fn.start_ea == ea
+            )
+
+            if use_func_comment:
+                if fn is None:
+                    results.append({"addr": addr_str, "error": f"No function found at {hex(ea)}"})
+                    continue
+                target_ea = fn.start_ea
+                current = idc.get_func_cmt(target_ea, False) or ""
+                new_comment, skipped = _append_comment_text(current, comment, dedupe=dedupe)
+                if skipped:
+                    results.append({"addr": addr_str, "scope": "func", "skipped": True})
+                    continue
+                if not idc.set_func_cmt(target_ea, new_comment, False):
+                    results.append({
+                        "addr": addr_str,
+                        "error": f"Failed to set function comment at {hex(target_ea)}",
+                    })
+                    continue
+                results.append({"addr": addr_str, "scope": "func", "appended": True})
+                continue
+
+            current = idaapi.get_cmt(ea, False) or ""
+            new_comment, skipped = _append_comment_text(current, comment, dedupe=dedupe)
+            if skipped:
+                results.append({"addr": addr_str, "scope": "line", "skipped": True})
+                continue
+            if not idaapi.set_cmt(ea, new_comment, False):
+                results.append({
+                    "addr": addr_str,
+                    "error": f"Failed to set disassembly comment at {hex(ea)}",
+                })
+                continue
+            results.append({"addr": addr_str, "scope": "line", "appended": True})
+        except Exception as e:
+            results.append({"addr": addr_str, "error": str(e)})
+
+    return results
+
+
+# ============================================================================
+# Code / Function Definition & Undefinition
+# ============================================================================
+
+
+@tool
+@idasync
+def define_func(items: list[DefineOp] | DefineOp) -> list[DefineResult]:
+    """Define a function at each given address. IDA infers bounds unless an
+    explicit end address is provided. Returns {addr, start, end} on success or
+    {addr, start, error} if the function already exists or add_func fails.
+    Use this when IDA auto-analysis missed a function entry point."""
+    if isinstance(items, dict):
+        items = [items]
+
+    if len(items) > _MAX_BATCH_SIZE:
+        raise IDAError(f"Batch too large: maximum {_MAX_BATCH_SIZE} items per request")
+
+    results: list[DefineResult] = []
+    for item in items:
+        addr_str = item.get("addr", "")
+        end_str = item.get("end", "")
+
+        try:
+            start_ea = parse_address(addr_str)
+            end_ea = parse_address(end_str) if end_str else idaapi.BADADDR
+
+            existing = idaapi.get_func(start_ea)
+            if existing and existing.start_ea == start_ea:
+                results.append({
+                    "addr": addr_str,
+                    "start": hex(start_ea),
+                    "error": "Function already exists at this address",
+                })
+                continue
+
+            if ida_funcs.add_func(start_ea, end_ea):
+                func = idaapi.get_func(start_ea)
+                results.append({
+                    "addr": addr_str,
+                    "start": hex(func.start_ea),
+                    "end": hex(func.end_ea),
+                })
+            else:
+                results.append({
+                    "addr": addr_str,
+                    "start": hex(start_ea),
+                    "error": "define_func failed",
+                })
+        except Exception as e:
+            results.append({"addr": addr_str, "error": str(e)})
+
+    return results
+
+
+@tool
+@idasync
+def define_code(items: list[DefineOp] | DefineOp) -> list[DefineResult]:
+    """Convert raw bytes to a code instruction at each given address. Returns
+    {addr, ea, length} on success (length is the instruction byte length) or
+    {addr, ea, error} if create_insn failed. Use this when IDA classified an
+    instruction as data or failed to decode."""
+    if isinstance(items, dict):
+        items = [items]
+
+    if len(items) > _MAX_BATCH_SIZE:
+        raise IDAError(f"Batch too large: maximum {_MAX_BATCH_SIZE} items per request")
+
+    results: list[DefineResult] = []
+    for item in items:
+        addr_str = item.get("addr", "")
+
+        try:
+            ea = parse_address(addr_str)
+            length = ida_ua.create_insn(ea)
+            if length > 0:
+                results.append({"addr": addr_str, "ea": hex(ea), "length": length})
+            else:
+                results.append({
+                    "addr": addr_str,
+                    "ea": hex(ea),
+                    "error": "Failed to create instruction",
+                })
+        except Exception as e:
+            results.append({"addr": addr_str, "error": str(e)})
+
+    return results
+
+
+@tool
+@idasync
+def undefine(items: list[UndefineOp] | UndefineOp) -> list[DefineResult]:
+    """Undefine item(s) at each address, converting them back to raw bytes.
+    Size is determined from `end` (exclusive) or `size`; defaults to 1 byte.
+    Uses ida_bytes.DELIT_EXPAND so adjacent items spanning into the range are
+    fully removed. Returns {addr, start, size} on success."""
+    if isinstance(items, dict):
+        items = [items]
+
+    if len(items) > _MAX_BATCH_SIZE:
+        raise IDAError(f"Batch too large: maximum {_MAX_BATCH_SIZE} items per request")
+
+    results: list[DefineResult] = []
+    for item in items:
+        addr_str = item.get("addr", "")
+        end_str = item.get("end", "")
+        size = item.get("size", 0)
+
+        try:
+            start_ea = parse_address(addr_str)
+
+            if end_str:
+                end_ea = parse_address(end_str)
+                nbytes = end_ea - start_ea
+            elif size:
+                nbytes = size
+            else:
+                nbytes = 1
+
+            if nbytes <= 0:
+                results.append({
+                    "addr": addr_str,
+                    "start": hex(start_ea),
+                    "error": f"Invalid range: {nbytes} bytes",
+                })
+                continue
+
+            if ida_bytes.del_items(start_ea, ida_bytes.DELIT_EXPAND, nbytes):
+                results.append({
+                    "addr": addr_str,
+                    "start": hex(start_ea),
+                    "size": nbytes,
+                })
+            else:
+                results.append({
+                    "addr": addr_str,
+                    "start": hex(start_ea),
+                    "error": "undefine failed",
+                })
+        except Exception as e:
+            results.append({"addr": addr_str, "error": str(e)})
+
+    return results

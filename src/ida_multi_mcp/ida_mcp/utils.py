@@ -85,11 +85,37 @@ class CommentOp(TypedDict):
     comment: Annotated[str, "Comment text"]
 
 
+class CommentAppendOp(TypedDict):
+    """Comment append operation (adds text to existing comment)"""
+
+    addr: Annotated[str, "Address (hex or decimal)"]
+    comment: Annotated[str, "Comment text to append"]
+    scope: NotRequired[Annotated[str, "auto|func|line (default: auto)"]]
+    dedupe: NotRequired[
+        Annotated[bool, "Skip if exact text already exists (default: true)"]
+    ]
+
+
 class AsmPatchOp(TypedDict):
     """Assembly patch operation"""
 
     addr: Annotated[str, "Address (hex or decimal)"]
     asm: Annotated[str, "Assembly instruction(s), semicolon-separated"]
+
+
+class DefineOp(TypedDict, total=False):
+    """Define function/code operation"""
+
+    addr: Annotated[str, "Address to define (hex or decimal)"]
+    end: Annotated[str, "Optional end address for explicit bounds"]
+
+
+class UndefineOp(TypedDict, total=False):
+    """Undefine operation (convert items back to raw bytes)"""
+
+    addr: Annotated[str, "Address to undefine (hex or decimal)"]
+    end: Annotated[str, "Optional end address"]
+    size: Annotated[int, "Optional size in bytes"]
 
 
 class FunctionRename(TypedDict):
