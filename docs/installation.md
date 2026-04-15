@@ -3,7 +3,7 @@
 This guide is for AI agents. Follow each step exactly.
 
 Last updated: 2026-02-17
-Governance reference: `docs/PROJECT_GOVERNANCE.md`
+Governance reference: `docs/README.md`
 Authority note: this document is operational guidance and must not redefine contracts.
 
 ## Prerequisites

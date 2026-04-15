@@ -6,7 +6,7 @@ Status: Active
 이 문서는 `ida-multi-mcp` 문서의 진입점이다.
 
 ## Governance First
-- Governance: `docs/PROJECT_GOVERNANCE.md`
+- Governance entry: this file (`docs/README.md`)
 - 최고 권위(SSOT): `docs/.ssot/contracts/*`
 - 문서 충돌 시 우선순위:
 1. `docs/.ssot/contracts/*`

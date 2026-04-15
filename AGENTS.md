@@ -3,7 +3,7 @@
 Last updated: 2026-02-17
 
 ## 1) Entry Rules
-- Read order: `docs/PROJECT_GOVERNANCE.md` -> `docs/.ssot/PRD.md` -> `docs/.ssot/contracts/*` -> target domain docs.
+- Read order: `docs/README.md` -> `docs/.ssot/PRD.md` -> `docs/.ssot/contracts/*` -> target domain docs.
 - Conflict resolution: Contracts are the source of truth.
 
 ## 2) Documentation Rules

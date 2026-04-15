@@ -15,7 +15,7 @@ Change class: B (scope/architecture)
 - 이 디렉터리는 아키텍처 설명 문서이며 Contracts 의미론을 재정의하지 않는다.
 
 ## Required Cross-links
-- Governance: `docs/PROJECT_GOVERNANCE.md`
+- Governance: `docs/README.md`
 - PRD: `docs/.ssot/PRD.md`
 - Contracts: `docs/.ssot/contracts/INDEX.md`
 - Decisions: `docs/.ssot/decisions/INDEX.md`
