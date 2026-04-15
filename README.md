@@ -510,7 +510,7 @@ The installation approach (AI-agent-friendly installation guides) was influenced
 
 For issues, feature requests, or questions:
 - Check the troubleshooting section above
-- Review DESIGN.md for architecture details
+- Review `docs/.ssot/architectures/` for architecture details
 - Open an issue on GitHub
 
 ## Star History
