@@ -2,9 +2,31 @@
 
 Multi-instance IDA Pro MCP server for simultaneous reverse engineering of multiple binaries through a single MCP endpoint.
 
-## Overview
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
+![IDA Pro](https://img.shields.io/badge/IDA%20Pro-8.3%2B-orange.svg)
+![MCP](https://img.shields.io/badge/MCP-compatible-brightgreen.svg)
 
-**ida-multi-mcp** enables you to analyze multiple binaries in parallel using IDA Pro, with all instances accessible through a single MCP connection. Instead of juggling multiple MCP client configurations, you open multiple IDA instances and the server automatically discovers and routes requests to each.
+## Why ida-multi-mcp?
+
+Analyze multiple binaries in parallel — dropper, payload, C2 — through a single MCP connection. Each IDA Pro instance auto-registers on startup; your LLM client sees every instance without touching its config.
+
+## Quick Start
+
+**Just ask your AI agent to install it.** Copy-paste one of these prompts — it handles the Python version matching, IDA plugin placement, and MCP client registration for you.
+
+**Claude Code / AmpCode:**
+> Install and configure ida-multi-mcp by following the instructions here: https://raw.githubusercontent.com/MeroZemory/ida-multi-mcp/main/docs/installation.md
+
+**Cursor:**
+> @Web fetch https://raw.githubusercontent.com/MeroZemory/ida-multi-mcp/main/docs/installation.md and follow the installation steps.
+
+Once installed, open your binaries in IDA Pro (instances auto-register) and ask your LLM:
+> *"Decompile `main` in malware.exe (k7m2) and compare it with the entry point in dropper.dll (px3a)"*
+
+Prefer to install by hand? See [Manual Installation](#manual-installation) below.
+
+## How It Works
 
 ```
 MCP Client (Claude, Cursor, etc.)
@@ -22,7 +44,7 @@ MCP Client (Claude, Cursor, etc.)
   (auto)  (auto)  (auto)
 ```
 
-## Key Features
+## Features
 
 - **Zero-configuration instance discovery** — Each IDA Pro instance auto-registers on startup
 - **Port-collision free** — Uses OS auto-assigned ports (port 0)
@@ -37,21 +59,14 @@ MCP Client (Claude, Cursor, etc.)
 - Python 3.11 or later
 - IDA Pro 8.3+ (9.0 recommended)
 
-## Installation
+## Manual Installation
 
-### For Humans
+> Already used the AI-agent prompt in [Quick Start](#quick-start)? You can skip this section.
 
-The easiest way to install is to let your AI agent handle it. Copy and paste one of these prompts into your AI tool:
+Pick your platform:
 
-**Claude Code / AmpCode:**
-> Install and configure ida-multi-mcp by following the instructions here: https://raw.githubusercontent.com/MeroZemory/ida-multi-mcp/main/docs/installation.md
-
-**Cursor:**
-> @Web fetch https://raw.githubusercontent.com/MeroZemory/ida-multi-mcp/main/docs/installation.md and follow the installation steps.
-
-Or install manually:
-
-#### macOS
+<details>
+<summary><b>macOS</b> — requires matching IDA's Python version</summary>
 
 > **Important:** IDA Pro typically uses a different Python version than your system default (e.g., IDA uses Python 3.11 while macOS ships with 3.14). You must install the package for **both** your terminal Python and IDA's Python.
 
@@ -81,7 +96,10 @@ claude mcp add ida-multi-mcp -s user -- ida-multi-mcp
 
 > **Note:** `ida-multi-mcp --install` registers MCP servers using `python3 -m ida_multi_mcp`, which may point to the wrong Python version on macOS. For Claude Code, use `claude mcp add` as shown above to ensure it uses the pipx-managed CLI directly.
 
-#### Windows
+</details>
+
+<details>
+<summary><b>Windows</b></summary>
 
 ```bash
 # 0. (Recommended) Clean previous install to avoid stale scripts/config
@@ -98,7 +116,10 @@ ida-multi-mcp --install
 > If IDA uses a different Python version than your default, use `py -3.12` (replace with IDA's version) instead of `python`.
 > If you manually edit `%USERPROFILE%\\.codex\\config.toml`, use literal TOML quoting for Windows paths (e.g., `[projects.'\\?\\C:\\path\\to\\repo']`, `command = 'C:\\...\\python.exe'`).
 
-#### Linux
+</details>
+
+<details>
+<summary><b>Linux</b></summary>
 
 ```bash
 # 1. Install ida-multi-mcp
@@ -108,23 +129,19 @@ pip install --user git+https://github.com/MeroZemory/ida-multi-mcp.git
 ida-multi-mcp --install
 ```
 
-### For AI Agents
+</details>
 
-Fetch and follow the installation guide:
+### AI-agent reference
 
-```bash
-curl -s https://raw.githubusercontent.com/MeroZemory/ida-multi-mcp/main/docs/installation.md
-```
-
-The guide covers:
-1. Platform-specific package installation (macOS, Windows, Linux)
-2. IDA Python version matching
-3. IDA plugin setup + MCP client auto-configuration (`ida-multi-mcp --install`)
-4. Verification and troubleshooting
+The canonical installation guide an AI agent should follow is at
+[`docs/installation.md`](https://raw.githubusercontent.com/MeroZemory/ida-multi-mcp/main/docs/installation.md). It covers platform-specific package installation, IDA Python version matching, plugin setup via `ida-multi-mcp --install`, and verification.
 
 ### Supported MCP Clients
 
-Works with any MCP-compatible client. Tested with:
+Works with any MCP-compatible client. `ida-multi-mcp --install` auto-configures all detected clients (Claude Code, Claude Desktop, Cursor, Windsurf, VS Code, Zed, and 20+ more).
+
+<details>
+<summary>Full tested client list (19)</summary>
 
 | Client | Type |
 |--------|------|
@@ -148,19 +165,19 @@ Works with any MCP-compatible client. Tested with:
 | Copilot CLI | CLI |
 | Gemini CLI | CLI |
 
-### MCP Client Configuration
+</details>
 
-`ida-multi-mcp --install` automatically configures all detected MCP clients:
-- Claude Code, Claude Desktop, Cursor, Windsurf, VS Code, Zed, and 20+ more
+### Manual MCP Client Configuration
 
-For clients not auto-detected or to view the configuration JSON, run:
+For clients not auto-detected or to view the raw configuration JSON:
 ```bash
 ida-multi-mcp --config
 ```
 
 ## Uninstallation
 
-#### macOS
+<details>
+<summary><b>macOS</b></summary>
 
 ```bash
 # 1. Remove IDA plugin + MCP client configurations
@@ -171,7 +188,10 @@ pipx uninstall ida-multi-mcp
 python3.11 -m pip uninstall -y ida-multi-mcp  # replace 3.11 with IDA's version
 ```
 
-#### Windows
+</details>
+
+<details>
+<summary><b>Windows</b></summary>
 
 ```bash
 # 1. Remove IDA plugin + MCP client configurations
@@ -183,6 +203,8 @@ ida-multi-mcp --uninstall --ida-dir "C:\Program Files\IDA Pro 9.0"
 # 2. Remove the Python package
 python -m pip uninstall -y ida-multi-mcp
 ```
+
+</details>
 
 After uninstalling, fully restart IDA Pro and your MCP client(s) so the removed configuration is picked up.
 
@@ -371,7 +393,8 @@ When a binary change is detected:
 
 ## Troubleshooting
 
-### "No IDA instances registered"
+<details>
+<summary>"No IDA instances registered"</summary>
 
 Make sure:
 1. IDA Pro is running with a binary loaded
@@ -379,7 +402,10 @@ Make sure:
 3. Check IDA console for error messages
 4. Run `ida-multi-mcp --list` again
 
-### "Instance 'k7m2' not found"
+</details>
+
+<details>
+<summary>"Instance 'k7m2' not found"</summary>
 
 The instance has crashed or expired. Run:
 ```bash
@@ -387,11 +413,17 @@ ida-multi-mcp --list
 ```
 to see available instances, then use a valid ID.
 
-### "Instance 'k7m2' expired. Replaced by 'px3a'"
+</details>
+
+<details>
+<summary>"Instance 'k7m2' expired. Replaced by 'px3a'"</summary>
 
 You opened a different binary in that IDA instance. This is expected. Use the new instance ID (`px3a`).
 
-### Plugin doesn't load in IDA / "No module named 'ida_multi_mcp'"
+</details>
+
+<details>
+<summary>Plugin doesn't load in IDA / "No module named 'ida_multi_mcp'"</summary>
 
 This usually means IDA's Python cannot find the package due to a **Python version mismatch**.
 
@@ -418,7 +450,10 @@ This usually means IDA's Python cannot find the package due to a **Python versio
    - Windows: `%APPDATA%\Hex-Rays\IDA Pro\plugins\`
 4. Restart IDA Pro
 
-### MCP server fails to connect (macOS)
+</details>
+
+<details>
+<summary>MCP server fails to connect (macOS)</summary>
 
 If your MCP client shows `Status: failed` for ida-multi-mcp, the registered command may point to the wrong Python version.
 
@@ -441,7 +476,10 @@ If your MCP client shows `Status: failed` for ida-multi-mcp, the registered comm
 
 3. Restart the MCP client
 
-### Codex fails to start on Windows with TOML parse error
+</details>
+
+<details>
+<summary>Codex fails to start on Windows with TOML parse error</summary>
 
 If Codex prints an error like `invalid unquoted key` for `%USERPROFILE%\.codex\config.toml`, the config contains Windows paths that are not valid TOML syntax.
 
@@ -457,6 +495,8 @@ args = ["-m", "ida_multi_mcp"]
 ```
 
 Do not use unquoted `\\?\...` project table keys, and do not use double-quoted Windows paths unless backslashes are escaped.
+
+</details>
 
 ## Design Decisions
 
