@@ -533,7 +533,7 @@ class McpServer:
 
             result = tool_response.get("result") if tool_response else None
             return {
-                "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                "content": [{"type": "text", "text": json.dumps(result, separators=(",", ":"))}],
                 "structuredContent": result,
                 "isError": False,
             }
@@ -614,7 +614,7 @@ class McpServer:
                         "contents": [{
                             "uri": uri,
                             "mimeType": "application/json",
-                            "text": json.dumps({"error": error.get("message", "Unknown error")}, indent=2),
+                            "text": json.dumps({"error": error.get("message", "Unknown error")}, separators=(",", ":")),
                         }],
                         "isError": True,
                     }
@@ -624,7 +624,7 @@ class McpServer:
                     "contents": [{
                         "uri": uri,
                         "mimeType": "application/json",
-                        "text": json.dumps(result, indent=2),
+                        "text": json.dumps(result, separators=(",", ":")),
                     }]
                 }
 
@@ -637,7 +637,7 @@ class McpServer:
                 "text": json.dumps({
                     "error": f"Resource not found: {uri}",
                     "available_patterns": available,
-                }, indent=2),
+                }, separators=(",", ":")),
             }],
             "isError": True,
         }
@@ -679,7 +679,7 @@ class McpServer:
 
         # Convert non-string results to JSON
         if not isinstance(result, str):
-            result = json.dumps(result, indent=2)
+            result = json.dumps(result, separators=(",", ":"))
         return {
             "messages": [
                 {

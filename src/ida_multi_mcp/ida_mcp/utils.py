@@ -932,6 +932,29 @@ def get_stack_frame_variables_internal(
     return members
 
 
+_STRING_OR_SPACES_RE = re.compile(
+    r'"(?:[^"\\]|\\.)*"'
+    r"|'(?:[^'\\]|\\.)*'"
+    r"|[ \t]{2,}"
+)
+
+
+def compact_whitespace(line: str) -> str:
+    """Collapse runs of internal spaces while preserving string literals."""
+    stripped = line.lstrip(" \t")
+    if not stripped:
+        return line
+    lead = line[: len(line) - len(stripped)]
+
+    def _repl(match: re.Match[str]) -> str:
+        text = match.group()
+        if text[0] in ('"', "'"):
+            return text
+        return " "
+
+    return lead + _STRING_OR_SPACES_RE.sub(_repl, stripped)
+
+
 def decompile_checked(addr: int):
     """Decompile a function and raise IDAError on failure (uses cache)"""
     if not ida_hexrays.init_hexrays_plugin():
@@ -979,7 +1002,7 @@ def decompile_function_safe(ea: int) -> Optional[str]:
                             line_ea = int(ds[0], 16)
                         except ValueError:
                             pass
-            text = ida_lines.tag_remove(sl.line)
+            text = compact_whitespace(ida_lines.tag_remove(sl.line))
             if line_ea is not None:
                 lines.append(f"{text} /*{line_ea:#x}*/")
             else:
@@ -1011,7 +1034,7 @@ def get_assembly_lines(ea: int) -> str:
             if idc.get_operand_type(item_ea, n) == idaapi.o_void:
                 break
             ops.append(idc.print_operand(item_ea, n) or "")
-        instruction = f"{mnem} {', '.join(ops)}".rstrip()
+        instruction = compact_whitespace(f"{mnem} {', '.join(ops)}".rstrip())
         lines_str += f"\n{item_ea:x}  {instruction}"
 
     return lines_str

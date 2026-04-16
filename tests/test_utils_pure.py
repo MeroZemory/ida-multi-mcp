@@ -57,6 +57,7 @@ for _sub in _SUBMODULES:
 # through our real _sync_stub above, and all ida_* modules are MagicMocks.
 # The __init__.py imports of api_* etc. will hit our MagicMock stubs harmlessly.
 from ida_multi_mcp.ida_mcp.utils import (
+    compact_whitespace,
     parse_address,
     normalize_list_input,
     normalize_dict_list,
@@ -93,7 +94,6 @@ class TestParseAddress:
         with pytest.raises(IDAError, match="out of range"):
             parse_address(-1)
 
-
 class TestBssSafeReads:
     def test_read_bytes_bss_safe_zero_fills_unloaded(self):
         load_map = {0x1000: True, 0x1001: False, 0x1002: True, 0x1003: False}
@@ -118,6 +118,17 @@ class TestBssSafeReads:
 
         assert read_int_bss_safe(0x3000, 8) == 0x1122334455667788
         utils.ida_bytes.get_qword.assert_called_once_with(0x3000)
+
+
+class TestCompactWhitespace:
+    def test_collapses_internal_spaces(self):
+        assert compact_whitespace("mov     eax,     ebx") == "mov eax, ebx"
+
+    def test_preserves_string_literals(self):
+        assert compact_whitespace('db "a   b",    0') == 'db "a   b", 0'
+
+    def test_preserves_leading_indent(self):
+        assert compact_whitespace("    if   (x)\t\treturn  1;") == "    if (x) return 1;"
 
 
 # ---------------------------------------------------------------------------

@@ -52,6 +52,7 @@ class TestToolsCall:
         structured = result["structuredContent"]
         assert "count" in structured
         assert "instances" in structured
+        assert result["content"][0]["text"] == json.dumps(structured, separators=(",", ":"))
 
     def test_get_cached_output_miss(self, server):
         resp = _call(server, "tools/call",

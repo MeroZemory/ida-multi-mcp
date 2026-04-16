@@ -27,6 +27,7 @@ from .utils import (
     get_prototype,
     get_stack_frame_variables_internal,
     decompile_function_safe,
+    compact_whitespace,
     get_assembly_lines,
     get_all_xrefs,
     get_all_comments,
@@ -235,7 +236,7 @@ def disasm(
             if len(lines) < max_instructions:
                 line = ida_lines.generate_disasm_line(ea, 0)
                 instruction = ida_lines.tag_remove(line) if line else ""
-                lines.append(f"{ea:x}  {instruction}")
+                lines.append(f"{ea:x}  {compact_whitespace(instruction)}")
                 seen += 1
                 return True
             more = True
@@ -1430,7 +1431,7 @@ def insn_query(
                 ea = int(addr_hex, 16)
                 matches.append({
                     "addr": addr_hex,
-                    "disasm": idc.GetDisasm(ea) if idaapi.is_loaded(ea) else None,
+                    "disasm": compact_whitespace(idc.GetDisasm(ea)) if idaapi.is_loaded(ea) else None,
                     "fn": get_function(ea, raise_error=False),
                 })
 

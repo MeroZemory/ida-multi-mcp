@@ -110,14 +110,14 @@ class IdaMultiMcpServer:
             return structured
 
         def _json_text(value: Any) -> str:
-            return json.dumps(value, indent=2)
+            return json.dumps(value, separators=(",", ":"))
 
         def _schema_preserving_preview(value: Any, max_chars: int) -> Any:
             """Return a smaller value of the same JSON type (str/list/dict) when huge."""
             if max_chars <= 0:
                 return value
             try:
-                if len(json.dumps(value)) <= max_chars:
+                if len(_json_text(value)) <= max_chars:
                     return value
             except Exception:
                 return value
@@ -130,7 +130,7 @@ class IdaMultiMcpServer:
                 for item in value:
                     out.append(item)
                     try:
-                        if len(json.dumps(out)) > max_chars:
+                        if len(_json_text(out)) > max_chars:
                             out.pop()
                             break
                     except Exception:
@@ -176,7 +176,7 @@ class IdaMultiMcpServer:
             if name == "list_instances":
                 result = management.list_instances()
                 return {
-                    "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                    "content": [{"type": "text", "text": _json_text(result)}],
                     "structuredContent": result,
                     "isError": False
                 }
@@ -184,7 +184,7 @@ class IdaMultiMcpServer:
             elif name == "refresh_tools":
                 result = management.refresh_tools()
                 return {
-                    "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                    "content": [{"type": "text", "text": _json_text(result)}],
                     "structuredContent": result,
                     "isError": False
                 }
@@ -211,7 +211,7 @@ class IdaMultiMcpServer:
             elif name == "compare_binaries":
                 result = management.compare_binaries(arguments)
                 return {
-                    "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                    "content": [{"type": "text", "text": _json_text(result)}],
                     "structuredContent": result,
                     "isError": "error" in result,
                 }
@@ -220,7 +220,7 @@ class IdaMultiMcpServer:
                 cache = get_cache()
                 result = {"entries": cache.list_entries(), **cache.stats()}
                 return {
-                    "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                    "content": [{"type": "text", "text": _json_text(result)}],
                     "structuredContent": result,
                     "isError": False,
                 }
@@ -228,7 +228,7 @@ class IdaMultiMcpServer:
             elif name == "decompile_to_file":
                 result = self._handle_decompile_to_file(arguments)
                 return {
-                    "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                    "content": [{"type": "text", "text": _json_text(result)}],
                     "structuredContent": result,
                     "isError": "error" in result
                 }
@@ -243,7 +243,7 @@ class IdaMultiMcpServer:
                 if name == "idalib_open" and not is_error:
                     self._refresh_tools()
                 return {
-                    "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                    "content": [{"type": "text", "text": _json_text(result)}],
                     "structuredContent": result,
                     "isError": is_error,
                 }
@@ -282,7 +282,7 @@ class IdaMultiMcpServer:
                 # Format response
                 if "error" in ida_response:
                     return {
-                        "content": [{"type": "text", "text": f"Error: {json.dumps(ida_response, indent=2)}"}],
+                        "content": [{"type": "text", "text": f"Error: {_json_text(ida_response)}"}],
                         "isError": True
                     }
 

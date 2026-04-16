@@ -25,6 +25,11 @@ def mcp():
         return a + b
 
     @server.tool
+    def info() -> dict:
+        """Return structured object data."""
+        return {"status": "ok", "count": 1}
+
+    @server.tool
     def failing():
         """Always fails."""
         raise McpToolError("Something went wrong")
@@ -98,6 +103,12 @@ class TestToolCall:
         result = resp["result"]
         assert result["isError"] is False
         assert "hi" in result["content"][0]["text"]
+
+    def test_structured_content_is_compact_json(self, mcp):
+        resp = _dispatch(mcp, "tools/call", {"name": "info"})
+        result = resp["result"]
+        assert result["isError"] is False
+        assert result["content"][0]["text"] == '{"status":"ok","count":1}'
 
     def test_mcp_tool_error(self, mcp):
         resp = _dispatch(mcp, "tools/call", {"name": "failing"})
