@@ -953,6 +953,11 @@ def main():
         "--registry", type=str, default=None,
         help="Path to registry JSON file (default: ~/.ida-mcp/instances.json)"
     )
+    parser.add_argument(
+        "--idalib-python", type=str, default=None,
+        help="Python executable with idapro installed (for headless idalib sessions). "
+             "Defaults to the same Python running this server."
+    )
 
     args = parser.parse_args()
 
@@ -967,7 +972,7 @@ def main():
         sys.exit(cmd_config(args))
     else:
         # Default: start MCP server
-        serve(registry_path=args.registry)
+        serve(registry_path=args.registry, idalib_python=args.idalib_python)
 
 
 if __name__ == "__main__":
