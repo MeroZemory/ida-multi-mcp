@@ -44,6 +44,7 @@ def list_instances() -> dict:
     for id, info in instances.items():
         result.append({
             "id": id,
+            "type": info.get("type", "gui"),
             "binary_name": info.get("binary_name", "unknown"),
             "binary_path": info.get("binary_path", "unknown"),
             "arch": info.get("arch", "unknown"),

@@ -18,10 +18,6 @@
             }
           ],
           "description": "Address(es) or name(s)"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -78,10 +74,6 @@
             }
           ],
           "description": "Convert numbers to various formats (hex, decimal, binary, ascii)"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -149,10 +141,6 @@
             }
           ],
           "description": "List functions with optional filtering and pagination"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -220,10 +208,6 @@
             }
           ],
           "description": "List global variables with optional filtering and pagination"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -250,10 +234,6 @@
         "count": {
           "type": "integer",
           "description": "Count (0=all)"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -282,10 +262,6 @@
         "offset": {
           "type": "integer",
           "description": "Skip first N matches (default: 0)"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -305,10 +281,6 @@
         "addr": {
           "type": "string",
           "description": "Function address to decompile"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -340,10 +312,6 @@
         "include_total": {
           "type": "boolean",
           "description": "Compute total instruction count (default: false)"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -377,10 +345,6 @@
         "limit": {
           "type": "integer",
           "description": "Max xrefs per address (default: 100, max: 1000)"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -442,10 +406,6 @@
               "additionalProperties": false
             }
           ]
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -482,10 +442,6 @@
         "limit": {
           "type": "integer",
           "description": "Max callees per function (default: 200, max: 500)"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -526,10 +482,6 @@
         "offset": {
           "type": "integer",
           "description": "Skip first N matches (default: 0)"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -570,10 +522,6 @@
         "offset": {
           "type": "integer",
           "description": "Skip first N blocks (default: 0)"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -628,10 +576,6 @@
         "offset": {
           "type": "integer",
           "description": "Skip first N matches (default: 0)"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -669,10 +613,6 @@
         "format": {
           "type": "string",
           "description": "Export format: json (default), c_header, or prototypes"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -718,10 +658,6 @@
         "max_edges_per_func": {
           "type": "integer",
           "description": "Max edges per function (default: 200, max: 5000)"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -783,10 +719,6 @@
               "additionalProperties": false
             }
           ]
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -849,10 +781,6 @@
             }
           ],
           "description": "Integer read requests (ty, addr). ty: i8/u64/i16le/i16be/etc"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -885,10 +813,6 @@
             }
           ],
           "description": "Addresses to read strings from"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -921,10 +845,6 @@
             }
           ],
           "description": "Global variable addresses or names to read values from"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -986,10 +906,6 @@
               "additionalProperties": false
             }
           ]
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -1062,10 +978,6 @@
             }
           ],
           "description": "Integer write requests (ty, addr, value). value is a string; supports 0x.. and negatives"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -1098,10 +1010,6 @@
             }
           ],
           "description": "C type declarations"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -1157,10 +1065,6 @@
               "additionalProperties": false
             }
           ]
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -1183,10 +1087,6 @@
         "filter": {
           "type": "string",
           "description": "Case-insensitive substring to search for in structure names"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -1274,10 +1174,6 @@
               "additionalProperties": false
             }
           ]
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -1310,10 +1206,6 @@
             }
           ],
           "description": "Addresses to infer types for"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -1375,10 +1267,6 @@
               "additionalProperties": false
             }
           ]
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -1434,10 +1322,6 @@
               "additionalProperties": false
             }
           ]
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -1671,10 +1555,6 @@
           },
           "required": [],
           "additionalProperties": false
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -1683,6 +1563,350 @@
     },
     "outputSchema": {
       "type": "object"
+    }
+  },
+  {
+    "name": "append_comments",
+    "description": "Append comments at addresses, deduping exact text by default. Unlike\n    set_comments (which overwrites), this preserves existing annotations \u2014 use\n    it for incremental commentary. scope='auto' (default) writes a function\n    comment when addr is a function start, otherwise a line comment; force\n    with scope='func' or 'line'. dedupe=True skips writes when the exact\n    stripped text already appears on its own line.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string",
+                    "description": "Address (hex or decimal)"
+                  },
+                  "comment": {
+                    "type": "string",
+                    "description": "Comment text to append"
+                  },
+                  "scope": {
+                    "type": "string",
+                    "description": "auto|func|line (default: auto)"
+                  },
+                  "dedupe": {
+                    "type": "boolean",
+                    "description": "Skip if exact text already exists (default: true)"
+                  }
+                },
+                "required": [
+                  "addr",
+                  "comment"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "addr": {
+                  "type": "string",
+                  "description": "Address (hex or decimal)"
+                },
+                "comment": {
+                  "type": "string",
+                  "description": "Comment text to append"
+                },
+                "scope": {
+                  "type": "string",
+                  "description": "auto|func|line (default: auto)"
+                },
+                "dedupe": {
+                  "type": "boolean",
+                  "description": "Skip if exact text already exists (default: true)"
+                }
+              },
+              "required": [
+                "addr",
+                "comment"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "items"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "addr": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "appended": {
+            "type": "boolean"
+          },
+          "skipped": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "name": "define_func",
+    "description": "Define a function at each given address. IDA infers bounds unless an\n    explicit end address is provided. Returns {addr, start, end} on success or\n    {addr, start, error} if the function already exists or add_func fails.\n    Use this when IDA auto-analysis missed a function entry point.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string",
+                    "description": "Address to define (hex or decimal)"
+                  },
+                  "end": {
+                    "type": "string",
+                    "description": "Optional end address for explicit bounds"
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "addr": {
+                  "type": "string",
+                  "description": "Address to define (hex or decimal)"
+                },
+                "end": {
+                  "type": "string",
+                  "description": "Optional end address for explicit bounds"
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "items"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "addr": {
+            "type": "string"
+          },
+          "ea": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "length": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "name": "define_code",
+    "description": "Convert raw bytes to a code instruction at each given address. Returns\n    {addr, ea, length} on success (length is the instruction byte length) or\n    {addr, ea, error} if create_insn failed. Use this when IDA classified an\n    instruction as data or failed to decode.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string",
+                    "description": "Address to define (hex or decimal)"
+                  },
+                  "end": {
+                    "type": "string",
+                    "description": "Optional end address for explicit bounds"
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "addr": {
+                  "type": "string",
+                  "description": "Address to define (hex or decimal)"
+                },
+                "end": {
+                  "type": "string",
+                  "description": "Optional end address for explicit bounds"
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "items"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "addr": {
+            "type": "string"
+          },
+          "ea": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "length": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "name": "undefine",
+    "description": "Undefine item(s) at each address, converting them back to raw bytes.\n    Size is determined from `end` (exclusive) or `size`; defaults to 1 byte.\n    Uses ida_bytes.DELIT_EXPAND so adjacent items spanning into the range are\n    fully removed. Returns {addr, start, size} on success.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string",
+                    "description": "Address to undefine (hex or decimal)"
+                  },
+                  "end": {
+                    "type": "string",
+                    "description": "Optional end address"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "description": "Optional size in bytes"
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "addr": {
+                  "type": "string",
+                  "description": "Address to undefine (hex or decimal)"
+                },
+                "end": {
+                  "type": "string",
+                  "description": "Optional end address"
+                },
+                "size": {
+                  "type": "integer",
+                  "description": "Optional size in bytes"
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "items"
+      ]
+    },
+    "outputSchema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "addr": {
+            "type": "string"
+          },
+          "ea": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "length": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
     }
   },
   {
@@ -1704,10 +1928,6 @@
             }
           ],
           "description": "Address(es)"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -1789,10 +2009,6 @@
               "additionalProperties": false
             }
           ]
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -1848,10 +2064,6 @@
               "additionalProperties": false
             }
           ]
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -1868,10 +2080,6 @@
         "code": {
           "type": "string",
           "description": "Python code"
-        },
-        "instance_id": {
-          "type": "string",
-          "description": "Target IDA instance ID (defaults to active instance)"
         }
       },
       "required": [
@@ -1880,6 +2088,879 @@
     },
     "outputSchema": {
       "type": "object"
+    }
+  },
+  {
+    "name": "survey_binary",
+    "description": "Get a compact overview of the binary in one call. Returns file metadata,\n    segment layout, entry points, statistics, top 15 strings and functions ranked\n    by xref count (functions include classification: thunk/wrapper/leaf/dispatcher/\n    complex), imports by category, and call graph summary. Use this as your FIRST\n    tool call when starting analysis. Do not call list_funcs, imports, or find_regex\n    separately for triage \u2014 this returns all of that. Use detail_level='minimal'\n    for binaries with >10k functions.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "detail_level": {
+          "type": "string",
+          "description": "Detail level: 'standard' or 'minimal'"
+        }
+      },
+      "required": []
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "module": {
+              "type": "string"
+            },
+            "arch": {
+              "type": "string"
+            },
+            "base_address": {
+              "type": "string"
+            },
+            "image_size": {
+              "type": "string"
+            },
+            "md5": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "module",
+            "arch",
+            "base_address",
+            "image_size",
+            "md5",
+            "sha256"
+          ],
+          "additionalProperties": false
+        },
+        "statistics": {
+          "type": "object",
+          "properties": {
+            "total_functions": {
+              "type": "integer"
+            },
+            "named_functions": {
+              "type": "integer"
+            },
+            "library_functions": {
+              "type": "integer"
+            },
+            "unnamed_functions": {
+              "type": "integer"
+            },
+            "total_strings": {
+              "type": "integer"
+            },
+            "total_segments": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "total_functions",
+            "named_functions",
+            "library_functions",
+            "unnamed_functions",
+            "total_strings",
+            "total_segments"
+          ],
+          "additionalProperties": false
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "start": {
+                "type": "string"
+              },
+              "end": {
+                "type": "string"
+              },
+              "size": {
+                "type": "string"
+              },
+              "permissions": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "start",
+              "end",
+              "size",
+              "permissions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "entrypoints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "addr": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "ordinal": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "addr",
+              "name",
+              "ordinal"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "interesting_strings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "addr": {
+                "type": "string"
+              },
+              "string": {
+                "type": "string"
+              },
+              "xref_count": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "addr",
+              "string",
+              "xref_count"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "interesting_functions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "addr": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "integer"
+              },
+              "xref_count": {
+                "type": "integer"
+              },
+              "callee_count": {
+                "type": "integer"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "addr",
+              "name",
+              "size",
+              "xref_count",
+              "callee_count",
+              "type"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "imports_by_category": {
+          "type": "object",
+          "properties": {
+            "crypto": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "module": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "addr",
+                  "name",
+                  "module"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "network": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "module": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "addr",
+                  "name",
+                  "module"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "file_io": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "module": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "addr",
+                  "name",
+                  "module"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "process": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "module": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "addr",
+                  "name",
+                  "module"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "registry": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "module": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "addr",
+                  "name",
+                  "module"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "other": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addr": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "module": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "addr",
+                  "name",
+                  "module"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "crypto",
+            "network",
+            "file_io",
+            "process",
+            "registry",
+            "other"
+          ],
+          "additionalProperties": false
+        },
+        "call_graph_summary": {
+          "type": "object",
+          "properties": {
+            "total_edges": {
+              "type": "integer"
+            },
+            "max_depth_estimate": {
+              "type": "null"
+            },
+            "root_functions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "leaf_functions_count": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "total_edges",
+            "max_depth_estimate",
+            "root_functions",
+            "leaf_functions_count"
+          ],
+          "additionalProperties": false
+        },
+        "_note": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "analyze_function",
+    "description": "Compact single-function analysis: pseudocode (capped at 100 lines), top\n    strings, top non-trivial constants, callers, callees, xrefs, comments, and\n    basic block summary. Use this for \"tell me everything about function X\" in\n    one call instead of chaining decompile + callees + xrefs_to separately.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "addr": {
+          "type": "string",
+          "description": "Function address or name"
+        },
+        "include_asm": {
+          "type": "boolean",
+          "description": "Include full disassembly (default: false, saves tokens)"
+        }
+      },
+      "required": [
+        "addr"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "addr": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "prototype": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "size": {
+          "type": "integer"
+        },
+        "decompiled": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decompile_truncated": {
+          "type": "integer"
+        },
+        "assembly": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "strings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "constants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object"
+            }
+          }
+        },
+        "callees": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "callers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "xrefs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "comments": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "basic_blocks": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "integer"
+            },
+            "cyclomatic_complexity": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "count",
+            "cyclomatic_complexity"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "analyze_component",
+    "description": "Analyze related functions as a group: per-function compact summaries,\n    internal call graph (edges only between supplied functions), shared globals,\n    interface vs internal classification, and strings used by multiple members.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "addrs": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Function addresses (comma-separated or list)"
+        }
+      },
+      "required": [
+        "addrs"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "functions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "addr": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "prototype": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "size": {
+                "type": "integer"
+              },
+              "callees": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "strings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "basic_blocks": {
+                "type": "integer"
+              },
+              "complexity": {
+                "type": "integer"
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        "internal_call_graph": {
+          "type": "object",
+          "properties": {
+            "nodes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "edges": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "nodes",
+            "edges"
+          ],
+          "additionalProperties": false
+        },
+        "shared_globals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "addr": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "accessed_by": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "addr",
+              "name",
+              "accessed_by"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "interface_functions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "internal_only": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "string_usage": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "diff_before_after",
+    "description": "Apply a rename/type/comment action and return the before/after decompilation\n    side by side. Actions: 'rename_func' ({name}), 'set_type' ({type}),\n    'set_comment' ({comment}). Useful to verify a rename or type change actually\n    improved readability. Returns {before, after, action_applied, changes_detected}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "addr": {
+          "type": "string",
+          "description": "Function address"
+        },
+        "action": {
+          "type": "string",
+          "description": "Action: 'rename_func', 'set_type', 'set_comment'"
+        },
+        "action_args": {
+          "type": "object",
+          "description": "Arguments for the action"
+        }
+      },
+      "required": [
+        "addr",
+        "action",
+        "action_args"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "before": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "action_applied": {
+          "type": "string"
+        },
+        "changes_detected": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "trace_data_flow",
+    "description": "Follow cross-references from or to an address, automatically traversing\n    multiple hops. 'forward' follows xrefs-from, 'backward' follows xrefs-to.\n    Returns nodes (with function name, instruction, code/data classification) and\n    edges. Do not use for call graph traversal \u2014 use callgraph for that.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "addr": {
+          "type": "string",
+          "description": "Starting address"
+        },
+        "direction": {
+          "type": "string",
+          "description": "'forward' (xrefs from) or 'backward' (xrefs to)"
+        },
+        "max_depth": {
+          "type": "integer",
+          "description": "Maximum traversal depth (default 5, max 20)"
+        }
+      },
+      "required": [
+        "addr"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string"
+        },
+        "direction": {
+          "type": "string"
+        },
+        "depth_reached": {
+          "type": "integer"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "addr": {
+                "type": "string"
+              },
+              "func": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "instruction": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "depth": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "addr",
+              "func",
+              "instruction",
+              "type",
+              "name",
+              "depth"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "from",
+              "to",
+              "type"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
     }
   }
 ]

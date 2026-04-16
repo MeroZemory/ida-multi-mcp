@@ -14,6 +14,7 @@ import idaapi
 import idautils
 import idc
 
+from . import compat
 from .rpc import resource
 from .sync import idasync
 from .utils import (
@@ -100,11 +101,11 @@ def idb_segments_resource() -> list[Segment]:
 def idb_entrypoints_resource() -> list[dict]:
    """Get entry points (main, TLS callbacks, etc.)"""
    entrypoints = []
-   entry_count = ida_nalt.get_entry_qty()
+   entry_count = compat.get_entry_qty()
    for i in range(entry_count):
-      ordinal = ida_nalt.get_entry_ordinal(i)
-      ea = ida_nalt.get_entry(ordinal)
-      name = ida_nalt.get_entry_name(ordinal)
+      ordinal = compat.get_entry_ordinal(i)
+      ea = compat.get_entry(ordinal)
+      name = compat.get_entry_name(ordinal)
       entrypoints.append({"addr": hex(ea), "name": name, "ordinal": ordinal})
    return entrypoints
 
@@ -260,11 +261,11 @@ def import_name_resource(name: Annotated[str, "Import name"]) -> dict:
 @idasync
 def export_name_resource(name: Annotated[str, "Export name"]) -> dict:
    """Get specific export details by name"""
-   entry_count = ida_nalt.get_entry_qty()
+   entry_count = compat.get_entry_qty()
    for i in range(entry_count):
-      ordinal = ida_nalt.get_entry_ordinal(i)
-      ea = ida_nalt.get_entry(ordinal)
-      entry_name = ida_nalt.get_entry_name(ordinal)
+      ordinal = compat.get_entry_ordinal(i)
+      ea = compat.get_entry(ordinal)
+      entry_name = compat.get_entry_name(ordinal)
 
       if entry_name == name:
          return {

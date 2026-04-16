@@ -13,13 +13,13 @@ import re
 from itertools import islice
 from typing import Annotated, TypedDict
 
-import ida_ida
 import ida_nalt
 import ida_segment
 import idaapi
 import idautils
 import idc
 
+from . import compat
 from .api_core import _get_strings_cache
 from .rpc import tool
 from .sync import idasync, tool_timeout
@@ -134,7 +134,7 @@ def _build_metadata() -> SurveyMetadata:
     module = ida_nalt.get_root_filename()
     base = hex(idaapi.get_imagebase())
     size = hex(get_image_size())
-    is_64 = ida_ida.inf_is_64bit()
+    is_64 = compat.inf_is_64bit()
 
     input_path = ida_nalt.get_input_file_path()
     try:
@@ -185,11 +185,11 @@ def _build_segments() -> list[SurveySegmentInfo]:
 
 def _build_entrypoints() -> list[SurveyEntrypoint]:
     entrypoints: list[SurveyEntrypoint] = []
-    entry_count = ida_nalt.get_entry_qty()
+    entry_count = compat.get_entry_qty()
     for i in range(entry_count):
-        ordinal = ida_nalt.get_entry_ordinal(i)
-        ea = ida_nalt.get_entry(ordinal)
-        name = ida_nalt.get_entry_name(ordinal)
+        ordinal = compat.get_entry_ordinal(i)
+        ea = compat.get_entry(ordinal)
+        name = compat.get_entry_name(ordinal)
         entrypoints.append({"addr": hex(ea), "name": name, "ordinal": ordinal})
     return entrypoints
 

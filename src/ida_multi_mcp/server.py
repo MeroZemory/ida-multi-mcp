@@ -14,7 +14,8 @@ from .vendor.zeromcp import McpServer
 from .registry import InstanceRegistry
 from .router import InstanceRouter
 from .health import cleanup_stale_instances, rediscover_instances
-from .tools import management
+from .idalib_manager import IdalibManager
+from .tools import management, idalib as idalib_tools
 from .cache import get_cache, DEFAULT_MAX_OUTPUT_CHARS
 
 # Static IDA tool schemas (loaded once at import time)
@@ -43,15 +44,23 @@ class IdaMultiMcpServer:
     tool calls to the appropriate instance.
     """
 
-    def __init__(self, registry_path: str | None = None):
+    def __init__(
+        self,
+        registry_path: str | None = None,
+        idalib_python: str | None = None,
+    ):
         """Initialize the multi-instance MCP server.
 
         Args:
             registry_path: Path to registry JSON file (default: ~/.ida-mcp/instances.json)
+            idalib_python: Python executable with idapro installed (for headless sessions)
         """
         self.registry = InstanceRegistry(registry_path)
         self.router = InstanceRouter(self.registry)
         self.server = McpServer("ida-multi-mcp", version="1.0.0")
+
+        # idalib lifecycle manager
+        self.idalib_manager = IdalibManager(self.registry, python_executable=idalib_python)
 
         # Tool cache
         self._tool_cache: dict[str, dict] = {}
@@ -60,6 +69,7 @@ class IdaMultiMcpServer:
         # Set up management tools
         management.set_registry(self.registry)
         management.set_refresh_callback(self._refresh_tools)
+        idalib_tools.set_manager(self.idalib_manager)
 
         # Register handlers
         self._register_handlers()
@@ -215,6 +225,21 @@ class IdaMultiMcpServer:
                     "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
                     "structuredContent": result,
                     "isError": "error" in result
+                }
+
+            # idalib management tools (local)
+            elif name in ("idalib_open", "idalib_close", "idalib_list", "idalib_status"):
+                handler = getattr(idalib_tools, name)
+                result = handler(arguments)
+                is_error = "error" in result
+                # After idalib_open succeeds, refresh tools so the new instance's
+                # tools become available immediately.
+                if name == "idalib_open" and not is_error:
+                    self._refresh_tools()
+                return {
+                    "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                    "structuredContent": result,
+                    "isError": is_error,
                 }
 
             # IDA tools (proxied)
@@ -493,6 +518,7 @@ class IdaMultiMcpServer:
                             "type": "object",
                             "properties": {
                                 "id": {"type": "string"},
+                                "type": {"type": "string", "description": "gui or idalib"},
                                 "binary_name": {"type": "string"},
                                 "binary_path": {"type": "string"},
                                 "arch": {"type": "string"},
@@ -501,7 +527,7 @@ class IdaMultiMcpServer:
                                 "pid": {"type": "integer"},
                                 "registered_at": {"type": "string"}
                             },
-                            "required": ["id", "binary_name", "binary_path", "arch", "host", "port", "pid", "registered_at"]
+                            "required": ["id", "type", "binary_name", "binary_path", "arch", "host", "port", "pid", "registered_at"]
                         }
                     }
                 },
@@ -576,6 +602,12 @@ class IdaMultiMcpServer:
                 "required": ["output_dir", "instance_id"]
             }
         }
+
+        # Register idalib management tool schemas (only if IDA Pro with idalib is available)
+        from .idalib_manager import is_idalib_available
+        if is_idalib_available():
+            for schema in idalib_tools.IDALIB_TOOL_SCHEMAS:
+                self._tool_cache[schema["name"]] = schema.copy()
 
         _SINGLE_THREAD_WARNING = (
             " WARNING: IDA executes on a single main thread. "
@@ -759,15 +791,16 @@ class IdaMultiMcpServer:
         print(f"[ida-multi-mcp] Server starting with {len(self._tool_cache)} tools",
               file=sys.stderr)
 
-        # Run server with stdio transport
+        # Run server with stdio transport (idalib cleanup via atexit in IdalibManager)
         self.server.stdio()
 
 
-def serve(registry_path: str | None = None):
+def serve(registry_path: str | None = None, idalib_python: str | None = None):
     """Start the ida-multi-mcp server.
 
     Args:
         registry_path: Optional custom registry path
+        idalib_python: Python executable with idapro installed (for headless)
     """
-    server = IdaMultiMcpServer(registry_path)
+    server = IdaMultiMcpServer(registry_path, idalib_python=idalib_python)
     server.run()
