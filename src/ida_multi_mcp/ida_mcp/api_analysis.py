@@ -15,11 +15,14 @@ import ida_idaapi
 import ida_xref
 import ida_ua
 import ida_name
+import idc
 from .rpc import tool
 from .sync import idasync, tool_timeout
 from .utils import (
     parse_address,
     normalize_list_input,
+    normalize_dict_list,
+    paginate,
     get_function,
     get_prototype,
     get_stack_frame_variables_internal,
@@ -27,6 +30,7 @@ from .utils import (
     get_assembly_lines,
     get_all_xrefs,
     get_all_comments,
+    extract_function_strings,
     Function,
     Argument,
     DisassemblyFunction,
