@@ -162,11 +162,8 @@ def read_struct(queries: list[StructRead] | StructRead) -> list[dict]:
                 member_addr = addr + offset
                 try:
                     if member.type.is_ptr():
-                        is_64bit = (
-                            ida_ida.inf_is_64bit()
-                            if ida_major >= 9
-                            else idaapi.get_inf_structure().is_64bit()
-                        )
+                        from . import compat
+                        is_64bit = compat.inf_is_64bit()
                         if is_64bit:
                             value = idaapi.get_qword(member_addr)
                             value_str = f"0x{value:016X}"

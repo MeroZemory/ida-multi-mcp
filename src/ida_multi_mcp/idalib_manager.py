@@ -25,6 +25,48 @@ _READY_TIMEOUT = 120
 # Poll interval while waiting for worker readiness.
 _READY_POLL_INTERVAL = 0.5
 
+# idalib library file name per platform.
+_IDALIB_NAMES = {
+    "win32": "idalib.dll",
+    "darwin": "libidalib.dylib",
+    "linux": "libidalib.so",
+}
+
+
+def is_idalib_available() -> bool:
+    """Check whether the detected IDA installation includes idalib (Pro only).
+
+    Returns True if idalib.dll / libidalib.* exists in the IDA directory
+    resolved from IDADIR or ida-config.json.
+    """
+    ida_dir = _resolve_ida_dir()
+    if not ida_dir:
+        return False
+    lib_name = _IDALIB_NAMES.get(sys.platform, "libidalib.so")
+    return os.path.isfile(os.path.join(ida_dir, lib_name))
+
+
+def _resolve_ida_dir() -> str | None:
+    """Resolve IDA dir from IDADIR env or ida-config.json (no filesystem scan)."""
+    env_dir = os.environ.get("IDADIR", "").strip()
+    if env_dir and os.path.isdir(env_dir):
+        return env_dir
+    # ida-config.json
+    if sys.platform == "win32":
+        cfg_path = os.path.join(os.environ.get("APPDATA", ""), "Hex-Rays", "IDA Pro", "ida-config.json")
+    else:
+        cfg_path = os.path.join(os.path.expanduser("~"), ".idapro", "ida-config.json")
+    try:
+        import json
+        with open(cfg_path, "r") as f:
+            cfg = json.load(f)
+        d = cfg.get("Paths", {}).get("ida-install-dir", "").strip()
+        if d and os.path.isdir(d):
+            return d
+    except Exception:
+        pass
+    return None
+
 
 def _find_free_port(host: str = "127.0.0.1") -> int:
     """Bind an ephemeral port, release it, return the number.
@@ -74,6 +116,15 @@ class IdalibManager:
         Returns a dict with ``instance_id``, ``host``, ``port``, ``pid``,
         ``binary`` on success, or ``error`` on failure.
         """
+        if not is_idalib_available():
+            return {
+                "error": (
+                    "idalib is not available. Headless mode requires IDA Pro "
+                    "(IDA Home/Free do not include idalib). "
+                    "Ensure IDADIR points to an IDA Pro installation."
+                )
+            }
+
         resolved_path = os.path.realpath(input_path)
         if not os.path.isfile(resolved_path):
             return {"error": f"File not found: {input_path}"}

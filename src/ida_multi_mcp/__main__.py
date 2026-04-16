@@ -4,6 +4,7 @@ Provides flags for running the server, listing instances, and managing installat
 """
 
 import os
+import re
 import sys
 import argparse
 import json
@@ -16,6 +17,95 @@ from .server import serve
 from .registry import InstanceRegistry
 
 SERVER_NAME = "ida-multi-mcp"
+
+# ---------------------------------------------------------------------------
+# IDA installation auto-detection (used by --install)
+# ---------------------------------------------------------------------------
+
+_IDA_VERSION_RE = re.compile(r"(\d+\.\d+)")
+
+
+def _detect_ida_dir() -> str | None:
+    """Auto-detect the IDA Pro installation directory.
+
+    Resolution order:
+    1. ``IDADIR`` environment variable (if set and valid).
+    2. ``ida-config.json`` ``ida-install-dir`` field (if non-empty).
+    3. Filesystem scan of well-known locations (newest version wins).
+    """
+    # 1. Env var
+    env_dir = os.environ.get("IDADIR", "").strip()
+    if env_dir and os.path.isdir(env_dir):
+        return env_dir
+
+    # 2. ida-config.json (written by idapro package)
+    if sys.platform == "win32":
+        config_path = Path(os.environ.get("APPDATA", "")) / "Hex-Rays" / "IDA Pro" / "ida-config.json"
+    else:
+        config_path = Path.home() / ".idapro" / "ida-config.json"
+    try:
+        with open(config_path, "r") as f:
+            cfg = json.load(f)
+        cfg_dir = cfg.get("Paths", {}).get("ida-install-dir", "").strip()
+        if cfg_dir and os.path.isdir(cfg_dir):
+            return cfg_dir
+    except Exception:
+        pass
+
+    # 3. Filesystem scan
+    candidates: list[tuple[tuple[int, ...], str]] = []
+
+    scan_roots: list[Path] = []
+    if sys.platform == "win32":
+        for drive in ("C:\\", "D:\\"):
+            if os.path.isdir(drive):
+                scan_roots.append(Path(drive))
+        pf = os.environ.get("ProgramFiles", "C:\\Program Files")
+        if os.path.isdir(pf):
+            scan_roots.append(Path(pf))
+        pf86 = os.environ.get("ProgramFiles(x86)", "")
+        if pf86 and os.path.isdir(pf86):
+            scan_roots.append(Path(pf86))
+    elif sys.platform == "darwin":
+        scan_roots.extend([Path("/Applications"), Path.home() / "Applications"])
+    else:
+        scan_roots.extend([Path("/opt"), Path.home()])
+
+    seen: set[str] = set()
+    for root in scan_roots:
+        try:
+            for entry in root.iterdir():
+                if not entry.is_dir():
+                    continue
+                if "ida" not in entry.name.lower():
+                    continue
+                resolved = str(entry.resolve())
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                has_marker = any(
+                    (entry / n).exists()
+                    for n in (
+                        "ida64.exe", "ida.exe",
+                        "ida64", "ida",
+                        "idalib.dll", "ida.dll",
+                        "libidalib.dylib", "libida.dylib",
+                        "libidalib.so", "libida.so",
+                    )
+                )
+                if not has_marker:
+                    continue
+                m = _IDA_VERSION_RE.search(entry.name)
+                ver = tuple(int(x) for x in m.group(1).split(".")) if m else (0, 0)
+                candidates.append((ver, resolved))
+        except PermissionError:
+            continue
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda t: t[0], reverse=True)
+    return candidates[0][1]
 
 
 def _replace_or_overwrite_file(src: str, dst: str, *, attempts: int = 6) -> bool:
@@ -805,6 +895,58 @@ def _get_ida_plugins_dir(custom_dir=None):
         return Path.home() / ".idapro" / "plugins"
 
 
+def _configure_idalib_path():
+    """Auto-detect IDA installation and write to ida-config.json.
+
+    The ``idapro`` package reads ``ida-config.json`` at import time to
+    locate IDA libraries. If the ``ida-install-dir`` field is already
+    populated or ``IDADIR`` is set, this is a no-op. Otherwise we scan
+    well-known paths, pick the newest version, and write it.
+    """
+    # Check if already configured
+    env_dir = os.environ.get("IDADIR", "").strip()
+    if env_dir and os.path.isdir(env_dir):
+        print(f"\n  [ok] IDADIR already set: {env_dir}")
+        return
+
+    # Check ida-config.json
+    if sys.platform == "win32":
+        config_path = Path(os.environ.get("APPDATA", "")) / "Hex-Rays" / "IDA Pro" / "ida-config.json"
+    else:
+        config_path = Path.home() / ".idapro" / "ida-config.json"
+
+    try:
+        with open(config_path, "r") as f:
+            cfg = json.load(f)
+        existing = cfg.get("Paths", {}).get("ida-install-dir", "").strip()
+        if existing and os.path.isdir(existing):
+            print(f"\n  [ok] ida-config.json already has ida-install-dir: {existing}")
+            return
+    except Exception:
+        cfg = {}
+
+    # Auto-detect
+    detected = _detect_ida_dir()
+    if not detected:
+        print("\n  [--] Could not auto-detect IDA installation directory.")
+        print("       Set IDADIR environment variable manually for headless (idalib) support.")
+        return
+
+    # Write to ida-config.json
+    cfg.setdefault("Paths", {})
+    cfg["Paths"]["ida-install-dir"] = detected
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(config_path, "w") as f:
+            json.dump(cfg, f, indent=4)
+        print(f"\n  [ok] Auto-detected IDA at: {detected}")
+        print(f"       Written to: {config_path}")
+    except Exception as e:
+        print(f"\n  [!!] Failed to write ida-config.json: {e}")
+        print(f"       Set IDADIR={detected} manually.")
+
+
 def cmd_install(args):
     """Install the IDA plugin and configure MCP clients."""
     print("Installing ida-multi-mcp...\n")
@@ -862,7 +1004,10 @@ def cmd_install(args):
 
     print("\n  [ok] IDA plugin installed!")
 
-    # 3. Auto-configure MCP clients
+    # 3. Auto-detect IDA installation and write to ida-config.json for idalib
+    _configure_idalib_path()
+
+    # 4. Auto-configure MCP clients
     print()
     install_mcp_servers()
 

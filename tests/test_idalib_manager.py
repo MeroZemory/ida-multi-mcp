@@ -24,7 +24,24 @@ class TestFindFreePort:
         assert len(ports) >= 2
 
 
+@pytest.fixture(autouse=True)
+def _mock_idalib_available():
+    """Assume IDA Pro (idalib) is available in all manager tests."""
+    with patch("ida_multi_mcp.idalib_manager.is_idalib_available", return_value=True):
+        yield
+
+
 class TestIdalibManagerSpawn:
+    def test_spawn_rejected_without_ida_pro(self, tmp_path, tmp_registry):
+        """Without IDA Pro, spawn_session should return a clear error."""
+        binary = tmp_path / "test.bin"
+        binary.write_bytes(b"\x00" * 16)
+        with patch("ida_multi_mcp.idalib_manager.is_idalib_available", return_value=False):
+            mgr = IdalibManager(tmp_registry)
+            result = mgr.spawn_session(str(binary))
+            assert "error" in result
+            assert "IDA Pro" in result["error"]
+
     def test_spawn_file_not_found(self, tmp_path, tmp_registry):
         mgr = IdalibManager(tmp_registry)
         result = mgr.spawn_session(str(tmp_path / "nonexistent.exe"))

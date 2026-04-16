@@ -603,9 +603,11 @@ class IdaMultiMcpServer:
             }
         }
 
-        # Register idalib management tool schemas
-        for schema in idalib_tools.IDALIB_TOOL_SCHEMAS:
-            self._tool_cache[schema["name"]] = schema.copy()
+        # Register idalib management tool schemas (only if IDA Pro with idalib is available)
+        from .idalib_manager import is_idalib_available
+        if is_idalib_available():
+            for schema in idalib_tools.IDALIB_TOOL_SCHEMAS:
+                self._tool_cache[schema["name"]] = schema.copy()
 
         _SINGLE_THREAD_WARNING = (
             " WARNING: IDA executes on a single main thread. "

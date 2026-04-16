@@ -12,12 +12,12 @@ import os
 from typing import Annotated
 
 import ida_dbg
-import ida_entry
 import ida_idd
 import ida_idaapi
 import ida_name
 import idaapi
 
+from . import compat
 from .rpc import tool, unsafe, ext
 from .sync import idasync, IDAError
 from .utils import (
@@ -164,9 +164,9 @@ def list_breakpoints():
 def dbg_start():
     """Start debugger"""
     if len(list_breakpoints()) == 0:
-        for i in range(ida_entry.get_entry_qty()):
-            ordinal = ida_entry.get_entry_ordinal(i)
-            addr = ida_entry.get_entry(ordinal)
+        for i in range(compat.get_entry_qty()):
+            ordinal = compat.get_entry_ordinal(i)
+            addr = compat.get_entry(ordinal)
             if addr != ida_idaapi.BADADDR:
                 ida_dbg.add_bpt(addr, 0, idaapi.BPT_SOFT)
 
