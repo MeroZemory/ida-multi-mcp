@@ -20,6 +20,7 @@ from typing import (
 
 import ida_funcs
 import ida_hexrays
+import ida_bytes
 import ida_kernwin
 import ida_nalt
 import ida_typeinf
@@ -458,6 +459,31 @@ def parse_address(addr: str | int) -> int:
     if result < 0 or result > _MAX_ADDRESS:
         raise IDAError(f"Address out of range: must be 0..0x{_MAX_ADDRESS:X}")
     return result
+
+
+def read_bytes_bss_safe(ea: int, size: int) -> bytes:
+    """Read bytes from the IDB, substituting zeros for unloaded BSS bytes."""
+    out = bytearray(size)
+    for offset in range(size):
+        current_ea = ea + offset
+        if ida_bytes.is_loaded(current_ea):
+            out[offset] = ida_bytes.get_byte(current_ea)
+    return bytes(out)
+
+
+def read_int_bss_safe(ea: int, size: int) -> int:
+    """Read a sized integer, treating unloaded BSS bytes as zero."""
+    if not ida_bytes.is_loaded(ea):
+        return 0
+    if size == 1:
+        return ida_bytes.get_byte(ea)
+    if size == 2:
+        return ida_bytes.get_word(ea)
+    if size == 4:
+        return ida_bytes.get_dword(ea)
+    if size == 8:
+        return ida_bytes.get_qword(ea)
+    raise ValueError(f"unsupported integer size: {size}")
 
 
 MAX_BATCH_SIZE = 500  # Security: prevent DoS via unbounded batch requests

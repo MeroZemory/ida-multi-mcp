@@ -21,6 +21,8 @@ from .utils import (
     StructureDefinition,
     StructRead,
     TypeEdit,
+    read_bytes_bss_safe,
+    read_int_bss_safe,
 )
 
 
@@ -164,31 +166,17 @@ def read_struct(queries: list[StructRead] | StructRead) -> list[dict]:
                     if member.type.is_ptr():
                         from . import compat
                         is_64bit = compat.inf_is_64bit()
-                        if is_64bit:
-                            value = idaapi.get_qword(member_addr)
-                            value_str = f"0x{value:016X}"
-                        else:
-                            value = idaapi.get_dword(member_addr)
-                            value_str = f"0x{value:08X}"
-                    elif member_size == 1:
-                        value = idaapi.get_byte(member_addr)
-                        value_str = f"0x{value:02X} ({value})"
-                    elif member_size == 2:
-                        value = idaapi.get_word(member_addr)
-                        value_str = f"0x{value:04X} ({value})"
-                    elif member_size == 4:
-                        value = idaapi.get_dword(member_addr)
-                        value_str = f"0x{value:08X} ({value})"
-                    elif member_size == 8:
-                        value = idaapi.get_qword(member_addr)
-                        value_str = f"0x{value:016X} ({value})"
+                        ptr_size = 8 if is_64bit else 4
+                        value = read_int_bss_safe(member_addr, ptr_size)
+                        value_str = f"0x{value:0{ptr_size * 2}X}"
+                    elif member_size in (1, 2, 4, 8):
+                        value = read_int_bss_safe(member_addr, member_size)
+                        value_str = f"0x{value:0{member_size * 2}X} ({value})"
                     else:
-                        bytes_data = []
-                        for i in range(min(member_size, 16)):
-                            try:
-                                bytes_data.append(f"{idaapi.get_byte(member_addr + i):02X}")
-                            except Exception:
-                                break
+                        bytes_data = [
+                            f"{byte:02X}"
+                            for byte in read_bytes_bss_safe(member_addr, min(member_size, 16))
+                        ]
                         value_str = f"[{' '.join(bytes_data)}{'...' if member_size > 16 else ''}]"
                 except Exception:
                     value_str = "<failed to read>"

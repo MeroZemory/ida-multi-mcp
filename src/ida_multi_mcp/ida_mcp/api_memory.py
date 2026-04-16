@@ -19,6 +19,8 @@ from .utils import (
     MemoryRead,
     normalize_list_input,
     parse_address,
+    read_bytes_bss_safe,
+    read_int_bss_safe,
 )
 
 
@@ -53,7 +55,7 @@ def get_bytes(regions: list[MemoryRead] | MemoryRead) -> list[dict]:
             if size < 0 or size > _MAX_READ_SIZE:
                 raise ValueError(f"Size must be between 0 and {_MAX_READ_SIZE} (got {size})")
             ea = parse_address(addr)
-            data = " ".join(f"{x:#02x}" for x in ida_bytes.get_bytes(ea, size))
+            data = " ".join(f"{x:#02x}" for x in read_bytes_bss_safe(ea, size))
             results.append({"addr": addr, "data": data})
         except Exception as e:
             results.append({"addr": addr, "data": None, "error": str(e)})
@@ -123,8 +125,8 @@ def get_int(
             bits, signed, byte_order, normalized = _parse_int_class(ty)
             ea = parse_address(addr)
             size = bits // 8
-            data = ida_bytes.get_bytes(ea, size)
-            if not data or len(data) != size:
+            data = read_bytes_bss_safe(ea, size)
+            if len(data) != size:
                 raise ValueError(f"Failed to read {size} bytes at {addr}")
 
             value = int.from_bytes(data, byte_order, signed=signed)
@@ -188,16 +190,10 @@ def get_global_variable_value_internal(ea: int) -> str:
             return "\"\""
         return_string = raw.decode("utf-8", errors="replace").strip()
         return f'"{return_string}"'
-    elif size == 1:
-        return hex(ida_bytes.get_byte(ea))
-    elif size == 2:
-        return hex(ida_bytes.get_word(ea))
-    elif size == 4:
-        return hex(ida_bytes.get_dword(ea))
-    elif size == 8:
-        return hex(ida_bytes.get_qword(ea))
+    elif size in (1, 2, 4, 8):
+        return hex(read_int_bss_safe(ea, size))
     else:
-        return " ".join(hex(x) for x in ida_bytes.get_bytes(ea, size))
+        return " ".join(hex(x) for x in read_bytes_bss_safe(ea, size))
 
 
 @tool

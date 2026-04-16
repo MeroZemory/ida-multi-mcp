@@ -19,7 +19,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 _IDA_MODULES = [
-    "ida_funcs", "ida_hexrays", "ida_kernwin", "ida_nalt", "ida_typeinf",
+    "ida_bytes", "ida_funcs", "ida_hexrays", "ida_kernwin", "ida_nalt", "ida_typeinf",
     "ida_ida", "ida_lines", "idaapi", "idautils", "idc",
 ]
 
@@ -63,7 +63,10 @@ from ida_multi_mcp.ida_mcp.utils import (
     looks_like_address,
     pattern_filter,
     paginate,
+    read_bytes_bss_safe,
+    read_int_bss_safe,
 )
+import ida_multi_mcp.ida_mcp.utils as utils
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +92,32 @@ class TestParseAddress:
     def test_out_of_range(self):
         with pytest.raises(IDAError, match="out of range"):
             parse_address(-1)
+
+
+class TestBssSafeReads:
+    def test_read_bytes_bss_safe_zero_fills_unloaded(self):
+        load_map = {0x1000: True, 0x1001: False, 0x1002: True, 0x1003: False}
+        value_map = {0x1000: 0x41, 0x1002: 0x43}
+
+        utils.ida_bytes.is_loaded.side_effect = lambda ea: load_map.get(ea, False)
+        utils.ida_bytes.get_byte.side_effect = lambda ea: value_map[ea]
+
+        assert read_bytes_bss_safe(0x1000, 4) == b"A\x00C\x00"
+
+    def test_read_int_bss_safe_returns_zero_for_unloaded_start(self):
+        utils.ida_bytes.is_loaded.side_effect = lambda ea: False
+
+        assert read_int_bss_safe(0x2000, 1) == 0
+        assert read_int_bss_safe(0x2000, 2) == 0
+        assert read_int_bss_safe(0x2000, 4) == 0
+        assert read_int_bss_safe(0x2000, 8) == 0
+
+    def test_read_int_bss_safe_uses_sized_reader_when_loaded(self):
+        utils.ida_bytes.is_loaded.side_effect = lambda ea: True
+        utils.ida_bytes.get_qword.return_value = 0x1122334455667788
+
+        assert read_int_bss_safe(0x3000, 8) == 0x1122334455667788
+        utils.ida_bytes.get_qword.assert_called_once_with(0x3000)
 
 
 # ---------------------------------------------------------------------------
