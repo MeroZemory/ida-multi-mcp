@@ -96,21 +96,18 @@ def read_struct(queries: list[StructRead] | StructRead) -> list[dict]:
                 )
                 continue
 
-            # Try to parse as address, then try name resolution
             try:
                 addr = parse_address(addr_str)
             except Exception:
-                addr = idaapi.get_name_ea(idaapi.BADADDR, addr_str)
-                if addr == idaapi.BADADDR:
-                    results.append(
-                        {
-                            "addr": addr_str,
-                            "struct": struct_name,
-                            "members": None,
-                            "error": f"Failed to resolve address: {addr_str}",
-                        }
-                    )
-                    continue
+                results.append(
+                    {
+                        "addr": addr_str,
+                        "struct": struct_name,
+                        "members": None,
+                        "error": f"Failed to resolve address: {addr_str}",
+                    }
+                )
+                continue
 
             # Auto-detect struct type from address if not provided
             if not struct_name:

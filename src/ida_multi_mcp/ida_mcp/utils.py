@@ -447,13 +447,18 @@ def parse_address(addr: str | int) -> int:
     if isinstance(addr, int):
         result = addr
     else:
+        text = addr.strip()
         try:
-            result = int(addr, 0)
+            result = int(text, 0)
         except ValueError:
-            for ch in addr:
-                if ch not in "0123456789abcdefABCDEF":
-                    raise IDAError(f"Failed to parse address: {addr}")
-            raise IDAError(f"Failed to parse address (missing 0x prefix): {addr}")
+            ea = idaapi.get_name_ea(idaapi.BADADDR, text)
+            if ea != idaapi.BADADDR:
+                result = ea
+            else:
+                for ch in text:
+                    if ch not in "0123456789abcdefABCDEF":
+                        raise IDAError(f"Not found: {addr!r}")
+                raise IDAError(f"Failed to parse address (missing 0x prefix): {addr}")
 
     # Security: validate address range to prevent integer overflow in IDA C APIs
     if result < 0 or result > _MAX_ADDRESS:

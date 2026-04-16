@@ -69,6 +69,9 @@ from ida_multi_mcp.ida_mcp.utils import (
 )
 import ida_multi_mcp.ida_mcp.utils as utils
 
+utils.idaapi.BADADDR = -1
+utils.idaapi.get_name_ea.side_effect = lambda _badaddr, _name: -1
+
 
 # ---------------------------------------------------------------------------
 # parse_address
@@ -86,8 +89,18 @@ class TestParseAddress:
     def test_int_passthrough(self):
         assert parse_address(42) == 42
 
+    def test_symbol_name_resolution(self):
+        utils.idaapi.get_name_ea.side_effect = None
+        utils.idaapi.get_name_ea.return_value = 0x401000
+
+        assert parse_address("main") == 0x401000
+        utils.idaapi.get_name_ea.assert_called_with(-1, "main")
+
+        utils.idaapi.get_name_ea.reset_mock()
+        utils.idaapi.get_name_ea.side_effect = lambda _badaddr, _name: -1
+
     def test_invalid_raises(self):
-        with pytest.raises(IDAError):
+        with pytest.raises(IDAError, match="Not found"):
             parse_address("not_an_address")
 
     def test_out_of_range(self):
