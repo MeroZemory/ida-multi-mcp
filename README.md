@@ -1,6 +1,6 @@
 # ida-multi-mcp
 
-Multi-instance IDA Pro MCP server for simultaneous reverse engineering of multiple binaries through a single MCP endpoint.
+Multi-instance IDA Pro MCP server for simultaneous reverse engineering of multiple binaries through a single MCP endpoint. Supports both GUI instances and headless analysis via idalib (IDA Pro only).
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
@@ -32,26 +32,29 @@ Prefer to install by hand? See [Manual Installation](#manual-installation) below
 MCP Client (Claude, Cursor, etc.)
     │  stdio (MCP Protocol)
     ▼
-┌─────────────────────────────────┐
-│  ida-multi-mcp Server (Router)  │
-│  - Dynamic tool discovery       │
-│  - instance_id injection        │
-│  - Management tools             │
-└───┬──────┬──────┬───────────────┘
-    │      │      │  HTTP JSON-RPC
-    ▼      ▼      ▼
-  IDA #1  IDA #2  IDA #3
-  (auto)  (auto)  (auto)
+┌──────────────────────────────────────┐
+│  ida-multi-mcp Server (Router)       │
+│  - Dynamic tool discovery            │
+│  - instance_id routing               │
+│  - Management + idalib lifecycle     │
+└───┬──────┬──────┬──────┬─────────────┘
+    │      │      │      │  HTTP JSON-RPC
+    ▼      ▼      ▼      ▼
+  IDA #1  IDA #2  IDA #3  idalib #1
+  (GUI)   (GUI)   (GUI)   (headless)
 ```
 
 ## Features
 
 - **Zero-configuration instance discovery** — Each IDA Pro instance auto-registers on startup
+- **Headless analysis (IDA Pro)** — Open binaries without GUI via `idalib_open` — each session runs as an isolated subprocess
 - **Port-collision free** — Uses OS auto-assigned ports (port 0)
-- **Dynamic tool discovery** — All 71+ IDA tools available automatically
+- **Dynamic tool discovery** — All 80+ IDA tools available automatically
+- **1-call binary triage** — `survey_binary` returns metadata, segments, top strings/functions, imports, and call graph in one call
 - **Cross-binary analysis** — Target specific instances via `instance_id` parameter
 - **Smart instance tracking** — 4-character IDs (k7m2, px3a, etc.) with automatic binary-change detection
-- **File-based registry** — Tracks all active instances
+- **IDA 8.3–9.3 compatible** — Built-in version compatibility shims (`compat.py`)
+- **File-based registry** — Tracks all active instances (GUI and headless)
 - **Graceful fallback** — Handles binary changes, stale instances, and crashes
 
 ## Requirements
@@ -210,7 +213,7 @@ After uninstalling, fully restart IDA Pro and your MCP client(s) so the removed 
 
 ## Usage
 
-### Opening Multiple Binaries
+### Opening Multiple Binaries (GUI Mode)
 
 1. Open IDA Pro and load your first binary (e.g., `malware.exe`)
    - Plugin auto-loads (PLUGIN_FIX flag)
@@ -220,6 +223,23 @@ After uninstalling, fully restart IDA Pro and your MCP client(s) so the removed 
    - Another instance auto-registers (e.g., `px3a`)
 
 3. Repeat for more binaries
+
+### Headless Analysis (IDA Pro Only)
+
+> **Requires IDA Pro license.** IDA Home/Free do not include `idalib`.
+
+Open binaries without a GUI — each session runs as an isolated subprocess:
+
+```
+> Use idalib_open to analyze /path/to/malware.exe headlessly
+```
+
+The LLM calls `idalib_open(input_path="/path/to/malware.exe")`, which spawns a headless idalib process, waits for auto-analysis, and returns an `instance_id`. From that point, all 80+ IDA tools work exactly as with a GUI instance.
+
+To specify a custom Python with `idapro` installed, start the server with:
+```bash
+ida-multi-mcp --idalib-python /path/to/python3.11
+```
 
 ### Viewing Registered Instances
 
@@ -255,7 +275,7 @@ Registered IDA instances (3):
 
 ### Using in Your LLM
 
-Once connected, all 71+ IDA tools are available. **All IDA tool calls require** the `instance_id` parameter to avoid cross-agent contention.
+Once connected, all 80+ IDA tools are available. **All IDA tool calls require** the `instance_id` parameter to avoid cross-agent contention.
 
 **Analyzing a single instance:**
 ```
@@ -272,16 +292,28 @@ Decompile main in malware.exe (k7m2) and compare it with the entry point in drop
 The server provides built-in management tools:
 
 ### list_instances()
-Lists all registered IDA instances with metadata (binary name, path, architecture, port).
+Lists all registered instances with metadata (binary name, path, architecture, port, **type**: `gui` or `idalib`).
 
 ### refresh_tools()
 Re-discovers tools from IDA instances. Use this if you update the IDA plugin.
 
-### get_cached_output(cache_id: str, offset: int = 0, size: int = 20000)
+### get_cached_output(cache_id, offset, size)
 Retrieve cached output from a previous tool call that was truncated.
 
 ### decompile_to_file(...)
 Decompile functions and save results directly to files on disk. Requires `instance_id`.
+
+### idalib_open(input_path, timeout, unsafe) *(IDA Pro only)*
+Open a binary in a new headless idalib session. Spawns a subprocess, waits for auto-analysis, registers in the shared registry.
+
+### idalib_close(instance_id) *(IDA Pro only)*
+Terminate a headless idalib session and remove it from the registry.
+
+### idalib_list() *(IDA Pro only)*
+List all managed headless idalib sessions.
+
+### idalib_status(instance_id) *(IDA Pro only)*
+Health/readiness check for a specific idalib session.
 
 ## Instance IDs Explained
 
@@ -310,6 +342,7 @@ Start the MCP server (stdio). Used by MCP clients. This is the default command.
 
 ```bash
 ida-multi-mcp
+ida-multi-mcp --idalib-python /path/to/python3  # custom Python for headless sessions
 ```
 
 ### `ida-multi-mcp --list`
@@ -507,6 +540,8 @@ Do not use unquoted `\\?\...` project table keys, and do not use double-quoted W
 | File-based registry | Simple, cross-process, debuggable, no database dependency |
 | Dynamic tool discovery | Future-proof, automatic updates, no hardcoded tool list |
 | Dual binary-change detection | Robust fallback if IDA hooks fail |
+| Subprocess-per-binary (idalib) | True parallelism, crash isolation, no in-process DB switching |
+| compat.py shims | Single source for IDA 8.3–9.3 API differences |
 
 ## Performance
 
@@ -519,7 +554,7 @@ Do not use unquoted `\\?\...` project table keys, and do not use double-quoted W
 
 - Supports 127.0.0.1 only (localhost analysis)
 - Remote IDA instances not supported in v1.0
-- Does not support IDA batch/headless (idalib) mode yet
+- Headless (idalib) mode requires **IDA Pro** — IDA Home/Free do not include `idalib.dll`
 - Resources (not tools) require manual routing in v1.0
 
 ## License
@@ -536,7 +571,7 @@ Contributions welcome! Please ensure:
 
 ## Acknowledgments
 
-This project was inspired by and builds upon [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) by [Duncan Ogilvie (mrexodia)](https://github.com/mrexodia). The IDA tool implementations (71+ tools) originated from ida-pro-mcp and have been absorbed into ida-multi-mcp as a bundled package, adding multi-instance orchestration on top.
+This project was inspired by and builds upon [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) by [Duncan Ogilvie (mrexodia)](https://github.com/mrexodia). The IDA tool implementations (80+ tools) originated from ida-pro-mcp and have been absorbed into ida-multi-mcp as a bundled package, adding multi-instance orchestration and headless idalib support on top.
 
 The installation approach (AI-agent-friendly installation guides) was influenced by [oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode) by [Yeongyu Yun (code-yeongyu)](https://github.com/code-yeongyu).
 
