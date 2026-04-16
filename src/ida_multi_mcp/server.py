@@ -69,6 +69,7 @@ class IdaMultiMcpServer:
         # Set up management tools
         management.set_registry(self.registry)
         management.set_refresh_callback(self._refresh_tools)
+        management.set_router(self.router)
         idalib_tools.set_manager(self.idalib_manager)
 
         # Register handlers
@@ -180,18 +181,6 @@ class IdaMultiMcpServer:
                     "isError": False
                 }
 
-            elif name in ("get_active_instance", "set_active_instance"):
-                # Deprecated/removed: this server requires explicit instance_id on every tool call.
-                result = {
-                    "error": f"Tool '{name}' has been removed.",
-                    "hint": "Call list_instances() and pass instance_id explicitly on every IDA tool call.",
-                }
-                return {
-                    "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
-                    "structuredContent": result,
-                    "isError": True
-                }
-
             elif name == "refresh_tools":
                 result = management.refresh_tools()
                 return {
@@ -218,6 +207,23 @@ class IdaMultiMcpServer:
                         "content": [{"type": "text", "text": f"Error: {str(e)}"}],
                         "isError": True
                     }
+
+            elif name == "compare_binaries":
+                result = management.compare_binaries(arguments)
+                return {
+                    "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                    "structuredContent": result,
+                    "isError": "error" in result,
+                }
+
+            elif name == "list_cached_outputs":
+                cache = get_cache()
+                result = {"entries": cache.list_entries(), **cache.stats()}
+                return {
+                    "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                    "structuredContent": result,
+                    "isError": False,
+                }
 
             elif name == "decompile_to_file":
                 result = self._handle_decompile_to_file(arguments)
@@ -538,6 +544,29 @@ class IdaMultiMcpServer:
         self._tool_cache["refresh_tools"] = {
             "name": "refresh_tools",
             "description": "Re-discover tools from IDA Pro instances.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+
+        self._tool_cache["compare_binaries"] = {
+            "name": "compare_binaries",
+            "description": "Compare two IDA instances by diffing their binary metadata, entrypoints, and segments. Takes two instance_id values and returns what is common vs unique to each.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "instance_id_a": {"type": "string", "description": "First instance ID"},
+                    "instance_id_b": {"type": "string", "description": "Second instance ID"},
+                },
+                "required": ["instance_id_a", "instance_id_b"]
+            }
+        }
+
+        self._tool_cache["list_cached_outputs"] = {
+            "name": "list_cached_outputs",
+            "description": "List all cached truncated outputs with cache_id, age, size, and tool name. Use this to find cache IDs for get_cached_output.",
             "inputSchema": {
                 "type": "object",
                 "properties": {},

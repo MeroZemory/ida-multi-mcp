@@ -42,17 +42,25 @@ class InstanceRouter:
         # Extract instance_id from params
         instance_id = params.get("arguments", {}).get("instance_id")
 
-        # Require explicit instance_id to avoid cross-agent contention on shared registries.
+        # Auto-select when exactly one instance is registered; require explicit
+        # instance_id when 0 or 2+ to avoid cross-agent contention.
         if not instance_id:
             instances = self.registry.list_instances()
-            return {
-                "error": "Missing required parameter 'instance_id'.",
-                "hint": "Call list_instances() and pass instance_id explicitly for every IDA tool call.",
-                "available_instances": [
-                    {"id": id, "binary_name": info.get("binary_name", "unknown")}
-                    for id, info in instances.items()
-                ],
-            }
+            if len(instances) == 1:
+                instance_id = next(iter(instances))
+            else:
+                return {
+                    "error": "Missing required parameter 'instance_id'.",
+                    "hint": (
+                        "Call list_instances() and pass instance_id explicitly."
+                        if len(instances) != 0
+                        else "No IDA instances registered. Start IDA with the MCP plugin first."
+                    ),
+                    "available_instances": [
+                        {"id": id, "binary_name": info.get("binary_name", "unknown")}
+                        for id, info in instances.items()
+                    ],
+                }
 
         # Get instance info
         instance_info = self.registry.get_instance(instance_id)

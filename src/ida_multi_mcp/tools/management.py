@@ -69,3 +69,81 @@ def refresh_tools() -> dict:
         count = _refresh_callback()
         return {"refreshed": True, "tools_count": count}
     return {"refreshed": False, "error": "Refresh callback not set"}
+
+
+# Module-level router reference for compare_binaries
+_router = None
+
+
+def set_router(router) -> None:
+    global _router
+    _router = router
+
+
+def compare_binaries(arguments: dict) -> dict:
+    """Compare two IDA instances by diffing their survey_binary results.
+
+    Returns added/removed/common functions, imports, and strings.
+    """
+    id_a = arguments.get("instance_id_a", "")
+    id_b = arguments.get("instance_id_b", "")
+    if not id_a or not id_b:
+        return {"error": "Both instance_id_a and instance_id_b are required"}
+    if id_a == id_b:
+        return {"error": "instance_id_a and instance_id_b must be different"}
+    if _router is None:
+        return {"error": "Router not initialized"}
+
+    def _call_survey(instance_id: str) -> dict | None:
+        resp = _router.route_request("tools/call", {
+            "name": "survey_binary",
+            "arguments": {"detail_level": "minimal", "instance_id": instance_id},
+        })
+        if "error" in resp:
+            return None
+        # Parse content wrapper
+        content = resp.get("content", [])
+        if content:
+            import json
+            try:
+                return json.loads(content[0].get("text", "{}"))
+            except Exception:
+                pass
+        return resp.get("structuredContent")
+
+    survey_a = _call_survey(id_a)
+    survey_b = _call_survey(id_b)
+    if survey_a is None:
+        return {"error": f"Failed to survey instance {id_a}"}
+    if survey_b is None:
+        return {"error": f"Failed to survey instance {id_b}"}
+
+    def _diff_sets(items_a: list[str], items_b: list[str]) -> dict:
+        set_a, set_b = set(items_a), set(items_b)
+        return {
+            "only_a": sorted(set_a - set_b)[:200],
+            "only_b": sorted(set_b - set_a)[:200],
+            "common": len(set_a & set_b),
+            "total_a": len(set_a),
+            "total_b": len(set_b),
+        }
+
+    # Extract function names from statistics
+    stats_a = survey_a.get("statistics", {})
+    stats_b = survey_b.get("statistics", {})
+
+    # Extract entry point names
+    entries_a = [e.get("name", "") for e in survey_a.get("entrypoints", [])]
+    entries_b = [e.get("name", "") for e in survey_b.get("entrypoints", [])]
+
+    # Extract segment names
+    segs_a = [s.get("name", "") for s in survey_a.get("segments", [])]
+    segs_b = [s.get("name", "") for s in survey_b.get("segments", [])]
+
+    return {
+        "instance_a": {"id": id_a, "module": survey_a.get("metadata", {}).get("module", "?")},
+        "instance_b": {"id": id_b, "module": survey_b.get("metadata", {}).get("module", "?")},
+        "statistics": {"a": stats_a, "b": stats_b},
+        "entrypoints": _diff_sets(entries_a, entries_b),
+        "segments": _diff_sets(segs_a, segs_b),
+    }

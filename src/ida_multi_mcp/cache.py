@@ -4,6 +4,7 @@ Provides in-memory LRU caching with TTL for tool responses that exceed
 the default output limit, enabling pagination via offset/size.
 """
 
+import os
 import threading
 import time
 import uuid
@@ -15,7 +16,7 @@ from typing import Any
 # Configuration
 DEFAULT_MAX_OUTPUT_CHARS = 10000  # Default truncation limit
 CACHE_MAX_ENTRIES = 200          # Maximum cached responses
-CACHE_TTL_SECONDS = 600          # 10 minutes
+CACHE_TTL_SECONDS = int(os.environ.get("IDA_MCP_CACHE_TTL", "1800"))  # 30 min default, env override
 
 
 @dataclass
@@ -206,6 +207,27 @@ class ResponseCache:
             count = len(self._cache)
             self._cache.clear()
             return count
+
+    def list_entries(self) -> list[dict[str, Any]]:
+        """List all cached entries with metadata (no content).
+
+        Returns:
+            List of dicts with cache_id, tool_name, instance_id,
+            total_chars, age_seconds.
+        """
+        with self._lock:
+            self._evict_expired()
+            now = time.time()
+            return [
+                {
+                    "cache_id": cid,
+                    "tool_name": entry.tool_name,
+                    "instance_id": entry.instance_id,
+                    "total_chars": len(entry.content),
+                    "age_seconds": round(now - entry.created_at),
+                }
+                for cid, entry in self._cache.items()
+            ]
 
     def stats(self) -> dict[str, Any]:
         """Get cache statistics.

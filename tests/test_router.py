@@ -23,12 +23,25 @@ def router_env(tmp_path):
 
 
 class TestMissingInstanceId:
-    def test_error_with_available_instances(self, router_env):
+    def test_auto_selects_single_instance(self, router_env):
+        """With 1 instance, missing instance_id should auto-select (not error)."""
         reg, router, iid = router_env
+        resp = router.route_request("tools/call", {"arguments": {}})
+        # Should NOT get "Missing instance_id" — may get connection error instead
+        if "error" in resp:
+            assert "instance_id" not in str(resp["error"]).lower()
+
+    def test_error_with_multiple_instances(self, tmp_path):
+        """With 2+ instances, missing instance_id should error."""
+        reg = InstanceRegistry(str(tmp_path / "inst.json"))
+        reg.register(pid=42, port=7000, idb_path="/a.i64",
+                     binary_name="a.exe", host="127.0.0.1")
+        reg.register(pid=43, port=7001, idb_path="/b.i64",
+                     binary_name="b.exe", host="127.0.0.1")
+        router = InstanceRouter(reg)
         resp = router.route_request("tools/call", {"arguments": {}})
         assert "error" in resp
         assert "instance_id" in resp["error"]
-        assert any(i["id"] == iid for i in resp["available_instances"])
 
 
 class TestNonexistentInstance:

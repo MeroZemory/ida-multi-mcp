@@ -357,6 +357,43 @@ def xrefs_to(
 
 @tool
 @idasync
+def xrefs_from(
+    addrs: Annotated[list[str] | str, "Addresses to find cross-references from"],
+    limit: Annotated[int, "Max xrefs per address (default: 100, max: 1000)"] = 100,
+) -> list[dict]:
+    """Get cross-references from specified addresses (symmetric with xrefs_to).
+    Returns outgoing code and data references for each address."""
+    addrs = normalize_list_input(addrs)
+
+    if limit <= 0 or limit > 1000:
+        limit = 1000
+
+    results = []
+
+    for addr in addrs:
+        try:
+            xrefs = []
+            more = False
+            for xref in idautils.XrefsFrom(parse_address(addr)):
+                if len(xrefs) >= limit:
+                    more = True
+                    break
+                xrefs.append(
+                    Xref(
+                        addr=hex(xref.to),
+                        type="code" if xref.iscode else "data",
+                        fn=get_function(xref.to, raise_error=False),
+                    )
+                )
+            results.append({"addr": addr, "xrefs": xrefs, "more": more})
+        except Exception as e:
+            results.append({"addr": addr, "xrefs": None, "error": str(e)})
+
+    return results
+
+
+@tool
+@idasync
 def xrefs_to_field(queries: list[StructFieldQuery] | StructFieldQuery) -> list[dict]:
     """Get cross-references to structure fields"""
     if isinstance(queries, dict):
@@ -1275,3 +1312,309 @@ def callgraph(
             results.append({"root": root, "error": str(e), "nodes": [], "edges": []})
 
     return results
+
+
+# ============================================================================
+# xref_query — unified xref query with direction + type filter
+# ============================================================================
+
+
+@tool
+@idasync
+def xref_query(
+    queries: Annotated[list[dict] | dict,
+        "Xref query: addr, direction (to/from/both), type_filter (code/data/all), offset, count"],
+) -> list[dict]:
+    """Query cross-references with direction and type filters.
+    direction='to' finds refs TO addr, 'from' finds refs FROM addr, 'both' finds all.
+    type_filter='code' shows only code xrefs, 'data' only data, 'all' shows both.
+    Supports dedup and pagination."""
+    queries = normalize_dict_list(queries)
+    results = []
+
+    for query in queries:
+        addr_str = query.get("addr", "")
+        direction = query.get("direction", "to")
+        type_filter = query.get("type_filter", "all")
+        offset = query.get("offset", 0)
+        count = query.get("count", 100)
+
+        try:
+            ea = parse_address(addr_str)
+            xrefs_raw: list[dict] = []
+            seen: set[tuple] = set()
+
+            if direction in ("to", "both"):
+                for xref in idautils.XrefsTo(ea, 0):
+                    key = ("to", xref.frm, ea, xref.iscode)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    xtype = "code" if xref.iscode else "data"
+                    if type_filter != "all" and xtype != type_filter:
+                        continue
+                    xrefs_raw.append({
+                        "direction": "to", "from": hex(xref.frm), "to": hex(ea),
+                        "type": xtype,
+                        "fn": get_function(xref.frm, raise_error=False),
+                    })
+
+            if direction in ("from", "both"):
+                for xref in idautils.XrefsFrom(ea, 0):
+                    key = ("from", ea, xref.to, xref.iscode)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    xtype = "code" if xref.iscode else "data"
+                    if type_filter != "all" and xtype != type_filter:
+                        continue
+                    xrefs_raw.append({
+                        "direction": "from", "from": hex(ea), "to": hex(xref.to),
+                        "type": xtype,
+                        "fn": get_function(xref.to, raise_error=False),
+                    })
+
+            page = paginate(xrefs_raw, offset, count)
+            results.append({"addr": addr_str, **page})
+        except Exception as e:
+            results.append({"addr": addr_str, "error": str(e)})
+
+    return results
+
+
+# ============================================================================
+# insn_query — instruction search by mnemonic/operand
+# ============================================================================
+
+
+@tool
+@idasync
+@tool_timeout(120.0)
+def insn_query(
+    queries: Annotated[list[dict] | dict,
+        "Instruction pattern: mnem, op0, op1, op2, op_any, func, segment, offset, count"],
+) -> list[dict]:
+    """Search instructions by mnemonic and/or operand values within a function,
+    segment, or global scope. Uses existing scan infrastructure.
+    Example: {mnem: 'call', func: '0x401000'} or {mnem: 'syscall'}"""
+    queries = normalize_dict_list(queries)
+    results = []
+
+    for pattern in queries:
+        mnem = str(pattern.get("mnem", "")).strip().lower()
+        offset = pattern.get("offset", 0)
+        count = min(pattern.get("count", 500), 5000)
+
+        op0 = pattern.get("op0")
+        op1 = pattern.get("op1")
+        op2 = pattern.get("op2")
+        op_any = pattern.get("op_any")
+
+        try:
+            ranges, range_error = _resolve_insn_scan_ranges(pattern, allow_broad=not mnem)
+            if range_error:
+                results.append({"pattern": pattern, "error": range_error, "matches": []})
+                continue
+
+            matched_addrs, more, scanned, capped, total = _scan_insn_ranges(
+                ranges, mnem, op0, op1, op2, op_any,
+                count=count, offset=offset, max_scan_insns=500_000,
+            )
+
+            matches = []
+            for addr_hex in matched_addrs:
+                ea = int(addr_hex, 16)
+                matches.append({
+                    "addr": addr_hex,
+                    "disasm": idc.GetDisasm(ea) if idaapi.is_loaded(ea) else None,
+                    "fn": get_function(ea, raise_error=False),
+                })
+
+            results.append({
+                "pattern": pattern,
+                "matches": matches,
+                "count": len(matches),
+                "more": more,
+                "scanned": scanned,
+            })
+        except Exception as e:
+            results.append({"pattern": pattern, "error": str(e), "matches": []})
+
+    return results
+
+
+# ============================================================================
+# analyze_batch — multi-function analysis in one call
+# ============================================================================
+
+
+@tool
+@idasync
+@tool_timeout(180.0)
+def analyze_batch(
+    addrs: Annotated[list[str] | str, "Function addresses to analyze"],
+    include_decompile: Annotated[bool, "Include pseudocode (default: true)"] = True,
+    include_asm: Annotated[bool, "Include disassembly (default: false)"] = False,
+    include_xrefs: Annotated[bool, "Include xrefs (default: true)"] = True,
+    include_strings: Annotated[bool, "Include strings (default: true)"] = True,
+    include_callees: Annotated[bool, "Include callees (default: true)"] = True,
+) -> list[dict]:
+    """Analyze multiple functions in one call. Selectively include decompilation,
+    disassembly, xrefs, strings, and callees per function. More efficient than
+    calling analyze_function N times — single IDA round-trip."""
+    addrs = normalize_list_input(addrs)
+
+    from .api_composite import _analyze_function_internal
+
+    results = []
+    for addr_str in addrs:
+        try:
+            ea = parse_address(addr_str)
+            result = _analyze_function_internal(ea, include_asm=include_asm)
+
+            if not include_decompile:
+                result.pop("decompiled", None)
+                result.pop("decompile_truncated", None)
+            if not include_xrefs:
+                result.pop("xrefs", None)
+            if not include_strings:
+                result.pop("strings", None)
+                result.pop("constants", None)
+            if not include_callees:
+                result.pop("callees", None)
+                result.pop("callers", None)
+
+            results.append(result)
+        except Exception as e:
+            results.append({"addr": addr_str, "error": str(e)})
+
+    return results
+
+
+# ============================================================================
+# classify_functions — batch function classification
+# ============================================================================
+
+
+@tool
+@idasync
+@tool_timeout(120.0)
+def classify_functions(
+    addrs: Annotated[list[str] | str, "Function addresses (or '*' for all non-library functions)"] = "*",
+    offset: Annotated[int, "Skip first N results (default: 0)"] = 0,
+    count: Annotated[int, "Max results (default: 500, max: 5000)"] = 500,
+) -> dict:
+    """Classify functions as thunk/wrapper/leaf/dispatcher/complex based on
+    size, callee count, and flags. Use '*' (default) for all non-library
+    functions. Returns paginated results sorted by address."""
+    from .api_survey import _classify_func
+
+    if count > 5000:
+        count = 5000
+
+    if isinstance(addrs, str) and addrs.strip() == "*":
+        func_eas = [ea for ea in idautils.Functions()
+                    if not (idaapi.get_func(ea) and idaapi.get_func(ea).flags & idaapi.FUNC_LIB)]
+    else:
+        addrs_list = normalize_list_input(addrs)
+        func_eas = [parse_address(a) for a in addrs_list]
+
+    classified = []
+    for ea in func_eas:
+        func = idaapi.get_func(ea)
+        if not func:
+            continue
+        callee_count = 0
+        for item_ea in idautils.FuncItems(ea):
+            for xref in idautils.XrefsFrom(item_ea, 0):
+                if xref.type in (idaapi.fl_CF, idaapi.fl_CN):
+                    callee_count += 1
+        classified.append({
+            "addr": hex(ea),
+            "name": idaapi.get_func_name(ea) or "",
+            "size": func.end_ea - func.start_ea,
+            "type": _classify_func(func, callee_count),
+        })
+
+    page = paginate(classified, offset, count)
+    page["total_classified"] = len(classified)
+    return page
+
+
+# ============================================================================
+# func_profile — per-function metrics for analysis prioritization
+# ============================================================================
+
+
+@tool
+@idasync
+@tool_timeout(120.0)
+def func_profile(
+    addrs: Annotated[list[str] | str, "Function addresses (or '*' for all)"] = "*",
+    offset: Annotated[int, "Skip first N (default: 0)"] = 0,
+    count: Annotated[int, "Max results (default: 100, max: 1000)"] = 100,
+    sort_by: Annotated[str, "Sort key: size, complexity, xref_count, callee_count, name (default: size)"] = "size",
+    descending: Annotated[bool, "Sort descending (default: true)"] = True,
+) -> dict:
+    """Per-function profile: size, basic block count, cyclomatic complexity,
+    callee/caller counts, and string count. Useful for prioritizing which
+    functions to analyze deeply. Fills the gap between list_funcs (too little
+    info) and analyze_function (too expensive per call)."""
+    if count > 1000:
+        count = 1000
+
+    if isinstance(addrs, str) and addrs.strip() == "*":
+        func_eas = list(idautils.Functions())
+    else:
+        addrs_list = normalize_list_input(addrs)
+        func_eas = [parse_address(a) for a in addrs_list]
+
+    profiles = []
+    for ea in func_eas:
+        func = idaapi.get_func(ea)
+        if not func:
+            continue
+
+        fc = idaapi.FlowChart(func)
+        bb_count = 0
+        edge_count = 0
+        for block in fc:
+            bb_count += 1
+            for _ in block.succs():
+                edge_count += 1
+        complexity = edge_count - bb_count + 2
+
+        xref_count = sum(1 for _ in idautils.XrefsTo(ea, 0))
+        callee_count = 0
+        for item_ea in idautils.FuncItems(ea):
+            for xref in idautils.XrefsFrom(item_ea, 0):
+                if xref.type in (idaapi.fl_CF, idaapi.fl_CN):
+                    callee_count += 1
+        caller_count = sum(1 for x in idautils.XrefsTo(ea, 0)
+                          if x.type in (idaapi.fl_CF, idaapi.fl_CN))
+
+        string_count = len(extract_function_strings(ea))
+
+        profiles.append({
+            "addr": hex(ea),
+            "name": idaapi.get_func_name(ea) or "",
+            "size": func.end_ea - func.start_ea,
+            "basic_blocks": bb_count,
+            "complexity": complexity,
+            "xref_count": xref_count,
+            "callee_count": callee_count,
+            "caller_count": caller_count,
+            "string_count": string_count,
+        })
+
+    sort_keys = {"size": "size", "complexity": "complexity", "xref_count": "xref_count",
+                 "callee_count": "callee_count", "name": "name"}
+    key = sort_keys.get(sort_by, "size")
+    if key == "name":
+        profiles.sort(key=lambda p: p["name"].lower(), reverse=descending)
+    else:
+        profiles.sort(key=lambda p: p.get(key, 0), reverse=descending)
+
+    page = paginate(profiles, offset, count)
+    page["total_profiled"] = len(profiles)
+    return page

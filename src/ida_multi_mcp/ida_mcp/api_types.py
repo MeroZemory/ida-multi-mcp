@@ -475,3 +475,128 @@ def infer_types(
             )
 
     return results
+
+
+# ============================================================================
+# Enum Upsert — idempotent enum creation/update
+# ============================================================================
+
+
+def _parse_enum_value(raw) -> int:
+    """Parse an enum member value from int, str ('0x...', decimal), or None."""
+    if raw is None:
+        raise ValueError("Enum member value is required")
+    if isinstance(raw, int):
+        return raw
+    s = str(raw).strip()
+    if s.startswith("0x") or s.startswith("0X"):
+        return int(s, 16)
+    return int(s)
+
+
+@tool
+@idasync
+def enum_upsert(
+    queries: Annotated[list[dict] | dict,
+        "Enum upsert: name, members [{name, value}], bitfield (optional bool)"],
+) -> list[dict]:
+    """Create or extend local enums in an idempotent way. Creates the enum if
+    it doesn't exist, then upserts each member: skips if name+value already match,
+    reports conflict if name or value collides with a different entry. Never
+    destructively replaces existing members."""
+    queries = normalize_dict_list(queries)
+    results = []
+
+    for query in queries:
+        enum_name = str(query.get("name", "") or "").strip()
+        members = normalize_dict_list(query.get("members"))
+        bitfield = bool(query.get("bitfield", False))
+
+        if not enum_name:
+            results.append({"name": enum_name, "error": "Enum name is required"})
+            continue
+        if not members or members == [{}]:
+            results.append({"name": enum_name, "error": "At least one member is required"})
+            continue
+
+        try:
+            enum_id = idc.get_enum(enum_name)
+            created = enum_id == idc.BADADDR
+            if created:
+                enum_id = idc.add_enum(idc.BADADDR, enum_name, 0)
+                if enum_id == idc.BADADDR:
+                    results.append({"name": enum_name, "error": f"Failed to create enum: {enum_name}"})
+                    continue
+
+            if bool(idc.is_bf(enum_id)) != bitfield and not created:
+                results.append({"name": enum_name, "enum_id": hex(enum_id),
+                                "error": f"Enum bitfield mismatch for {enum_name}"})
+                continue
+            idc.set_enum_bf(enum_id, bitfield)
+
+            member_results = []
+            created_count = skipped_count = conflict_count = 0
+
+            for member in members:
+                member_name = str(member.get("name", "") or "").strip()
+                if not member_name:
+                    member_results.append({"name": "", "error": "Member name is required"})
+                    conflict_count += 1
+                    continue
+                try:
+                    value = _parse_enum_value(member.get("value"))
+                except Exception as exc:
+                    member_results.append({"name": member_name, "error": str(exc)})
+                    conflict_count += 1
+                    continue
+
+                existing_mid = idc.get_enum_member_by_name(member_name)
+                if existing_mid != idc.BADADDR:
+                    existing_enum = idc.get_enum_member_enum(existing_mid)
+                    existing_value = idc.get_enum_member_value(existing_mid)
+                    if existing_enum == enum_id and existing_value == value:
+                        member_results.append({"name": member_name, "value": value, "skipped": True})
+                        skipped_count += 1
+                        continue
+                    member_results.append({
+                        "name": member_name, "value": value,
+                        "error": f"Name conflict: {member_name} exists with value {existing_value}",
+                    })
+                    conflict_count += 1
+                    continue
+
+                existing_const = idc.get_enum_member(enum_id, value, 0, -1)
+                if existing_const != -1:
+                    existing_name = idc.get_enum_member_name(existing_const) or ""
+                    if existing_name == member_name:
+                        member_results.append({"name": member_name, "value": value, "skipped": True})
+                        skipped_count += 1
+                        continue
+                    member_results.append({
+                        "name": member_name, "value": value,
+                        "error": f"Value conflict: {value} belongs to {existing_name}",
+                    })
+                    conflict_count += 1
+                    continue
+
+                rc = idc.add_enum_member(enum_id, member_name, value, -1)
+                if rc != 0:
+                    member_results.append({"name": member_name, "value": value,
+                                           "error": f"add_enum_member failed: rc={rc}"})
+                    conflict_count += 1
+                    continue
+                member_results.append({"name": member_name, "value": value, "created": True})
+                created_count += 1
+
+            result_dict: dict = {
+                "name": enum_name, "enum_id": hex(enum_id), "created": created,
+                "bitfield": bitfield, "members": member_results,
+                "summary": {"created": created_count, "skipped": skipped_count, "conflicts": conflict_count},
+            }
+            if conflict_count > 0:
+                result_dict["error"] = f"{conflict_count} member conflict(s)"
+            results.append(result_dict)
+        except Exception as exc:
+            results.append({"name": enum_name, "error": str(exc)})
+
+    return results
