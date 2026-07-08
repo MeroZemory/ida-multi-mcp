@@ -10,6 +10,7 @@ Wiring mirrors tools/management.py (module-level registry/router injection).
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import os
 import threading
@@ -31,6 +32,21 @@ _loaded: dict[str, dict] = {}
 _loaded_lock = threading.Lock()
 
 PAGE = int(os.environ.get("IDA_MCP_SIM_PAGE", "500"))
+
+# Monotonic build-generation counter: next()'d only while holding _jobs_lock,
+# in _start_background. Lets in-flight work (e.g. _load_partial) tell whether
+# the job it read from is still the one it started with, so a slow write-back
+# from a superseded/finished build can never clobber newer state.
+_gen_counter = itertools.count()
+
+# How often (in pages) a background build re-verifies the instance's binary
+# fingerprint still matches the one it started with. Every page would add a
+# routed IDA round-trip per page (~262 for a 130K-function binary) contending
+# with func_features calls on the same single-threaded IDA main thread; this
+# bounds (does not eliminate) the window during which a mid-build binary swap
+# can produce results attributed to the wrong binary.
+_FP_CHECK_EVERY_N_PAGES = int(os.environ.get("IDA_MCP_SIM_FP_CHECK_EVERY_N_PAGES", "20"))
+_PARTIAL_TTL_S = float(os.environ.get("IDA_MCP_SIM_PARTIAL_TTL_S", "2.0"))
 
 # Neural recall (opt-in): set IDA_MCP_SIM_NEURAL=1 and point JTRANS_MODEL /
 # JTRANS_TOKENIZER at a jTrans-finetune checkpoint. This adds a jTrans embedding
@@ -364,29 +380,70 @@ def _start_background(iid: str, key: str, fp: dict, binary_name: str,
             return {"index_id": key, "status": "ready", "embed_status": "embedding",
                     "embed_done": existing.get("embed_done", 0),
                     "embed_total": existing.get("embed_total", 0), "note": "already embedding"}
+        gen = next(_gen_counter)
         _jobs[iid] = {"status": "ready" if features_ready else "building",
                       "progress": 1.0 if features_ready else 0.0,
-                      "cancel": False, "error": None, "key": key}
+                      "cancel": False, "error": None, "key": key, "fp": fp,
+                      "gen": gen, "pages_seen": 0}
+
+    def _on_page(recs: list, total: int) -> bool:
+        with _jobs_lock:
+            job = _jobs.get(iid)
+            if job is None or job.get("gen") != gen:
+                return False   # a newer build superseded this one; stop
+            if total:
+                job["progress"] = min(len(recs) / total, 0.999)
+            job.setdefault("live_records", recs)   # same list object every call; no-op after page 1
+            job["pages_seen"] = n = job.get("pages_seen", 0) + 1
+            if job.get("cancel"):
+                return False
+        if n % _FP_CHECK_EVERY_N_PAGES == 0:
+            cur_key, _ = _instance_key(iid)
+            # cur_key is None on a transient routing/IDA failure (_instance_key
+            # returns (None, None) whenever _call_ida fails), not just on a
+            # real binary swap -- treat that as inconclusive and skip this
+            # check rather than aborting the build on a flaky round-trip.
+            if cur_key is not None and cur_key != key:
+                with _jobs_lock:
+                    j = _jobs.get(iid)
+                    if j is not None and j.get("gen") == gen:
+                        j.update(status="error",
+                                 error=f"binary changed mid-build (was {key[:12]}…, now "
+                                       f"{cur_key[:12] if cur_key else '?'}…)")
+                return False
+        return True
 
     def _run() -> None:
         try:
             if not features_ready:
-                def _on_page(recs: list, total: int) -> bool:
-                    with _jobs_lock:
-                        job = _jobs.get(iid, {})
-                        if total:
-                            job["progress"] = min(len(recs) / total, 0.999)
-                        return not job.get("cancel", False)
                 index_store.clear_vectors(key, rp)   # fresh build -> fresh vectors
                 records = _build_records(iid, _on_page)
+                with _jobs_lock:
+                    job = _jobs.get(iid)
+                    superseded_or_errored = (
+                        job is None or job.get("gen") != gen
+                        or job.get("status") == "error" or job.get("cancel")
+                    )
+                if superseded_or_errored:
+                    # _on_page stopped the loop (supersession, cancel, or a
+                    # detected binary-change mismatch) -- the collected
+                    # `records` are not trustworthy as a final index and must
+                    # not be persisted. Whatever partial results were already
+                    # served stay served (error path keeps live_records); we
+                    # just skip turning them into a bogus final write.
+                    return
                 index = _assemble_index(records, key, binary_name, fp)
                 index_store.write_index(index, rp)
                 _invalidate_cache(key)
                 valid_addrs = [r["addr"] for r in _valid_records(records)]
                 with _jobs_lock:
-                    _jobs[iid].update(status="ready", progress=1.0,
-                                      function_count=index["function_count"],
-                                      skipped_count=index["skipped_count"])
+                    job = _jobs.get(iid)
+                    if job is not None and job.get("gen") == gen:
+                        job.pop("live_records", None)
+                        job.pop("_partial_cache", None)
+                        job.update(status="ready", progress=1.0,
+                                  function_count=index["function_count"],
+                                  skipped_count=index["skipped_count"])
             else:  # features already on disk -> resume embedding only
                 idx = index_store.read_index(key, rp) or {}
                 valid_addrs = list(idx.get("functions", {}).keys())
@@ -473,6 +530,52 @@ def _load(key: str, rp: str | None) -> dict | None:
     return entry
 
 
+def _load_partial(iid: str) -> dict | None:
+    """Ephemeral, debounced index+anchor_index entry from a build in progress
+    (or one that errored, serving its last-known-good state).
+
+    Reuses the exact from-scratch functions `_assemble_index`/`build_anchor_index`
+    already used for the final index, over whatever the background thread has
+    accumulated so far (`_jobs[iid]["live_records"]`). Returns None if no build
+    is running/errored for `iid`, or none of its pages have landed yet.
+    """
+    with _jobs_lock:
+        job = _jobs.get(iid)
+        if not job or job.get("status") not in ("building", "error"):
+            return None
+        gen = job.get("gen")
+        key = job.get("key")
+        fp = job.get("fp") or {}
+        recs = job.get("live_records")
+        cached = job.get("_partial_cache")
+    if not recs or not key:
+        return None
+    now = time.time()
+    if cached and cached.get("gen") == gen and now - cached["at"] < _PARTIAL_TTL_S:
+        return cached["entry"]
+    # Use the build's own recorded key/fp (fixed at _start_background time),
+    # not a live re-fingerprint: the live fingerprint may have already moved
+    # on (e.g. after a detected binary-change error), and tagging these
+    # STALE records with a fresh key would misattribute them. Live-swap
+    # detection is _on_page's job (periodic recheck), not this loader's.
+    info = (_registry.get_instance(iid) or {}) if _registry else {}
+    idx = _assemble_index(list(recs), key, info.get("binary_name", ""), fp)
+    funcs = list(idx["functions"].values())
+    entry = {"index": idx, "anchor_index": sim_score.build_anchor_index(funcs)}
+    with _jobs_lock:
+        j = _jobs.get(iid)
+        # Only cache back if this is STILL the same build (gen match) and
+        # still in a state we're allowed to serve. A build that finished or
+        # was superseded by a NEWER generation while we were off the lock
+        # computing `entry` must not have its (now-stale, and for a finished
+        # build, un-freed) result written back. The caller still gets the
+        # freshly-computed `entry` for THIS call either way; only the cache
+        # write is conditional.
+        if j is not None and j.get("gen") == gen and j.get("status") in ("building", "error"):
+            j["_partial_cache"] = {"at": now, "gen": gen, "entry": entry}
+    return entry
+
+
 def _cap_candidates(cand: set, q: dict, entry: dict) -> set:
     funcs = entry["index"]["functions"]
     qa = set(q.get("apis", [])) | set(q.get("strings", [])) | set(q.get("consts", []))
@@ -525,6 +628,7 @@ def similar_functions(arguments: dict) -> dict:
 
     results: list[dict] = []
     not_indexed: list[str] = []
+    partial_coverage: dict[str, int] = {}
     gallery_size = 0
     for giid in gallery_iids:
         gkey, _ = _instance_key(giid)
@@ -532,9 +636,24 @@ def similar_functions(arguments: dict) -> dict:
             not_indexed.append(giid)
             continue
         entry = _load(gkey, rp)
+        partial = False
+        if entry is None:
+            entry = _load_partial(giid)
+            partial = entry is not None
+            if entry is None:
+                # The build may have finished (and been persisted) in the
+                # window between the _load() miss above and this point --
+                # _load_partial returns None once status leaves
+                # "building"/"error". Re-check the real index once more
+                # before reporting a false not_indexed.
+                entry = _load(gkey, rp)
         if entry is None:
             not_indexed.append(giid)
             continue
+        if partial:
+            # Same `entry` used for scoring below -- never a second, separately
+            # -timed lookup into `_jobs`.
+            partial_coverage[giid] = entry["index"]["function_count"]
         idx = entry["index"]
         funcs = idx.get("functions", {})
         gallery_size += len(funcs)
@@ -587,6 +706,9 @@ def similar_functions(arguments: dict) -> dict:
         "gallery_size": gallery_size,
         "results": results[:top_k],
     }
+    if partial_coverage:
+        out["partial"] = True
+        out["coverage"] = {giid: {"done": n, "total": None} for giid, n in partial_coverage.items()}
     if not_indexed:
         out["not_indexed"] = not_indexed
         out["hint"] = "Run index_functions on the listed instances first."
