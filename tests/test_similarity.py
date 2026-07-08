@@ -483,6 +483,45 @@ class PartialIndexTest(unittest.TestCase):
         self.assertIsNotNone(entry, "an errored build's last-known partial data must stay servable")
         self.assertEqual(entry["index"]["function_count"], 2)
 
+    def test_load_partial_write_back_does_not_resurrect_cleared_state(self):
+        similarity.index_functions({"instance_id": "aaaa", "background": True})
+        self._router.release_pages(1)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("pages_seen") == 1)
+
+        entered = threading.Event()
+        resume = threading.Event()
+        real_assemble = similarity._assemble_index
+        call_count = {"n": 0}
+
+        def blocking_assemble(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                entered.set()
+                resume.wait(timeout=5)
+            return real_assemble(*args, **kwargs)
+
+        similarity._assemble_index = blocking_assemble
+        try:
+            t = threading.Thread(target=similarity._load_partial, args=("aaaa",))
+            t.start()
+            self.assertTrue(entered.wait(timeout=5), "_load_partial did not reach _assemble_index")
+
+            # While _load_partial is blocked mid-computation, let the REAL
+            # background build finish (its own _assemble_index call is #2,
+            # which passes straight through).
+            self._router.release_pages(2)
+            _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("status") == "ready")
+
+            resume.set()   # let _load_partial's blocked call proceed and try to write back
+            t.join(timeout=5)
+        finally:
+            similarity._assemble_index = real_assemble
+
+        job = similarity._jobs["aaaa"]
+        self.assertNotIn("live_records", job)
+        self.assertNotIn("_partial_cache", job,
+                          "a stale write-back must not resurrect cleared partial state")
+
 
 if __name__ == "__main__":
     unittest.main()
