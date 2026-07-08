@@ -435,6 +435,54 @@ class PartialIndexTest(unittest.TestCase):
         self.assertFalse(index_store.has_index(orig_key, rp),
                           "an error/superseded build must not persist a final index")
 
+    def test_load_partial_returns_none_with_no_build(self):
+        self.assertIsNone(similarity._load_partial("aaaa"))
+
+    def test_load_partial_reflects_pages_seen_so_far(self):
+        similarity.index_functions({"instance_id": "aaaa", "background": True})
+        self._router.release_pages(1)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("pages_seen") == 1)
+
+        entry = similarity._load_partial("aaaa")
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["index"]["function_count"], 2)
+        self.assertIn("anchor_index", entry)
+
+        self._router.release_pages(2)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("status") == "ready")
+
+    def test_load_partial_returns_none_once_build_completes(self):
+        similarity.index_functions({"instance_id": "aaaa", "background": True})
+        self._router.release_pages(3)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("status") == "ready")
+        self.assertIsNone(similarity._load_partial("aaaa"))
+
+    def test_load_partial_debounces_within_ttl(self):
+        similarity.index_functions({"instance_id": "aaaa", "background": True})
+        self._router.release_pages(1)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("pages_seen") == 1)
+
+        first = similarity._load_partial("aaaa")
+        second = similarity._load_partial("aaaa")
+        self.assertIs(first, second, "within the TTL, the cached entry object must be reused")
+
+        self._router.release_pages(2)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("status") == "ready")
+
+    def test_load_partial_still_serves_after_build_errors(self):
+        similarity.index_functions({"instance_id": "aaaa", "background": True})
+        self._router.release_pages(1)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("pages_seen") == 1)
+        # Force the job into "error" directly (grey-box) rather than staging a
+        # real IDA-call failure -- isolates the status-gate behavior under test.
+        with similarity._jobs_lock:
+            similarity._jobs["aaaa"]["status"] = "error"
+            similarity._jobs["aaaa"]["error"] = "synthetic failure for this test"
+
+        entry = similarity._load_partial("aaaa")
+        self.assertIsNotNone(entry, "an errored build's last-known partial data must stay servable")
+        self.assertEqual(entry["index"]["function_count"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

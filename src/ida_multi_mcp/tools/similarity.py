@@ -46,6 +46,7 @@ _gen_counter = itertools.count()
 # bounds (does not eliminate) the window during which a mid-build binary swap
 # can produce results attributed to the wrong binary.
 _FP_CHECK_EVERY_N_PAGES = int(os.environ.get("IDA_MCP_SIM_FP_CHECK_EVERY_N_PAGES", "20"))
+_PARTIAL_TTL_S = float(os.environ.get("IDA_MCP_SIM_PARTIAL_TTL_S", "2.0"))
 
 # Neural recall (opt-in): set IDA_MCP_SIM_NEURAL=1 and point JTRANS_MODEL /
 # JTRANS_TOKENIZER at a jTrans-finetune checkpoint. This adds a jTrans embedding
@@ -520,6 +521,48 @@ def _load(key: str, rp: str | None) -> dict | None:
     entry = {"index": idx, "anchor_index": sim_score.build_anchor_index(funcs)}
     with _loaded_lock:
         _loaded[key] = entry
+    return entry
+
+
+def _load_partial(iid: str) -> dict | None:
+    """Ephemeral, debounced index+anchor_index entry from a build in progress
+    (or one that errored, serving its last-known-good state).
+
+    Reuses the exact from-scratch functions `_assemble_index`/`build_anchor_index`
+    already used for the final index, over whatever the background thread has
+    accumulated so far (`_jobs[iid]["live_records"]`). Returns None if no build
+    is running/errored for `iid`, or none of its pages have landed yet.
+    """
+    with _jobs_lock:
+        job = _jobs.get(iid)
+        if not job or job.get("status") not in ("building", "error"):
+            return None
+        gen = job.get("gen")
+        recs = job.get("live_records")
+        cached = job.get("_partial_cache")
+    if not recs:
+        return None
+    now = time.time()
+    if cached and cached.get("gen") == gen and now - cached["at"] < _PARTIAL_TTL_S:
+        return cached["entry"]
+    key, fp = _instance_key(iid)
+    if not key:
+        return None
+    info = (_registry.get_instance(iid) or {}) if _registry else {}
+    idx = _assemble_index(list(recs), key, info.get("binary_name", ""), fp)
+    funcs = list(idx["functions"].values())
+    entry = {"index": idx, "anchor_index": sim_score.build_anchor_index(funcs)}
+    with _jobs_lock:
+        j = _jobs.get(iid)
+        # Only cache back if this is STILL the same build (gen match) and
+        # still in a state we're allowed to serve. A build that finished or
+        # was superseded by a NEWER generation while we were off the lock
+        # computing `entry` must not have its (now-stale, and for a finished
+        # build, un-freed) result written back. The caller still gets the
+        # freshly-computed `entry` for THIS call either way; only the cache
+        # write is conditional.
+        if j is not None and j.get("gen") == gen and j.get("status") in ("building", "error"):
+            j["_partial_cache"] = {"at": now, "gen": gen, "entry": entry}
     return entry
 
 
