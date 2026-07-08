@@ -383,7 +383,7 @@ def _start_background(iid: str, key: str, fp: dict, binary_name: str,
         gen = next(_gen_counter)
         _jobs[iid] = {"status": "ready" if features_ready else "building",
                       "progress": 1.0 if features_ready else 0.0,
-                      "cancel": False, "error": None, "key": key,
+                      "cancel": False, "error": None, "key": key, "fp": fp,
                       "gen": gen, "pages_seen": 0}
 
     def _on_page(recs: list, total: int) -> bool:
@@ -399,7 +399,11 @@ def _start_background(iid: str, key: str, fp: dict, binary_name: str,
                 return False
         if n % _FP_CHECK_EVERY_N_PAGES == 0:
             cur_key, _ = _instance_key(iid)
-            if cur_key != key:
+            # cur_key is None on a transient routing/IDA failure (_instance_key
+            # returns (None, None) whenever _call_ida fails), not just on a
+            # real binary swap -- treat that as inconclusive and skip this
+            # check rather than aborting the build on a flaky round-trip.
+            if cur_key is not None and cur_key != key:
                 with _jobs_lock:
                     j = _jobs.get(iid)
                     if j is not None and j.get("gen") == gen:
@@ -417,7 +421,8 @@ def _start_background(iid: str, key: str, fp: dict, binary_name: str,
                 with _jobs_lock:
                     job = _jobs.get(iid)
                     superseded_or_errored = (
-                        job is None or job.get("gen") != gen or job.get("status") == "error"
+                        job is None or job.get("gen") != gen
+                        or job.get("status") == "error" or job.get("cancel")
                     )
                 if superseded_or_errored:
                     # _on_page stopped the loop (supersession, cancel, or a
@@ -538,16 +543,20 @@ def _load_partial(iid: str) -> dict | None:
         if not job or job.get("status") not in ("building", "error"):
             return None
         gen = job.get("gen")
+        key = job.get("key")
+        fp = job.get("fp") or {}
         recs = job.get("live_records")
         cached = job.get("_partial_cache")
-    if not recs:
+    if not recs or not key:
         return None
     now = time.time()
     if cached and cached.get("gen") == gen and now - cached["at"] < _PARTIAL_TTL_S:
         return cached["entry"]
-    key, fp = _instance_key(iid)
-    if not key:
-        return None
+    # Use the build's own recorded key/fp (fixed at _start_background time),
+    # not a live re-fingerprint: the live fingerprint may have already moved
+    # on (e.g. after a detected binary-change error), and tagging these
+    # STALE records with a fresh key would misattribute them. Live-swap
+    # detection is _on_page's job (periodic recheck), not this loader's.
     info = (_registry.get_instance(iid) or {}) if _registry else {}
     idx = _assemble_index(list(recs), key, info.get("binary_name", ""), fp)
     funcs = list(idx["functions"].values())
@@ -630,6 +639,13 @@ def similar_functions(arguments: dict) -> dict:
         if entry is None:
             entry = _load_partial(giid)
             partial = entry is not None
+            if entry is None:
+                # The build may have finished (and been persisted) in the
+                # window between the _load() miss above and this point --
+                # _load_partial returns None once status leaves
+                # "building"/"error". Re-check the real index once more
+                # before reporting a false not_indexed.
+                entry = _load(gkey, rp)
         if entry is None:
             not_indexed.append(giid)
             continue

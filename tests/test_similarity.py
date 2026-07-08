@@ -328,6 +328,7 @@ class PausableRouter:
         self.pages_served = 0
         self.swap_after_pages = None
         self._swapped = False
+        self.fail_fingerprint_times = 0
 
     def release_pages(self, n):
         for _ in range(n):
@@ -341,6 +342,9 @@ class PausableRouter:
         if feats is None:
             return {"error": f"no instance {iid}"}
         if name == "binary_fingerprint":
+            if self.fail_fingerprint_times > 0:
+                self.fail_fingerprint_times -= 1
+                return {"error": "transient routing failure"}
             sha = f"sha-{iid}-swapped" if self._swapped else f"sha-{iid}"
             payload = {"sha256": sha, "md5": None,
                        "function_count": len(feats), "arch": "x86_64"}
@@ -527,7 +531,7 @@ class PartialIndexTest(unittest.TestCase):
         # the gen-mismatch guard itself, rather than staging a full realistic
         # error-then-retry sequence (which would be racy/slow to set up).
         similarity._jobs["aaaa"] = {
-            "status": "building", "gen": 1,
+            "status": "building", "gen": 1, "key": "sha-aaaa",
             "live_records": _corpus()["aaaa"][:2],
         }
 
@@ -607,6 +611,83 @@ class PartialIndexTest(unittest.TestCase):
         out = similarity.similar_functions({"instance_id": "aaaa", "func": "0x1001", "top_k": 5})
         self.assertTrue(out.get("partial"))
         self.assertNotIn("not_indexed", out)
+        self.assertIn("0x1002", [r["addr"] for r in out["results"]])
+
+    # --- code-review follow-up fixes --------------------------------------
+
+    def test_transient_fingerprint_failure_does_not_abort_build(self):
+        orig_n = similarity._FP_CHECK_EVERY_N_PAGES
+        similarity._FP_CHECK_EVERY_N_PAGES = 1   # check every page for a deterministic test
+        try:
+            # index_functions() below makes its own synchronous fingerprint
+            # call first (to resolve the index key) -- only fail the NEXT
+            # one, which is the periodic mid-build recheck on page 1.
+            similarity.index_functions({"instance_id": "aaaa", "background": True})
+            self._router.fail_fingerprint_times = 1
+            self._router.release_pages(3)
+            _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("status") == "ready")
+        finally:
+            similarity._FP_CHECK_EVERY_N_PAGES = orig_n
+
+        self.assertEqual(similarity._jobs["aaaa"]["status"], "ready")
+        self.assertEqual(similarity._jobs["aaaa"]["pages_seen"], 3)
+
+    def test_cancel_prevents_final_write(self):
+        orig_key, _ = similarity._instance_key("aaaa")
+        similarity.index_functions({"instance_id": "aaaa", "background": True})
+        self._router.release_pages(1)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("pages_seen") == 1)
+        with similarity._jobs_lock:
+            similarity._jobs["aaaa"]["cancel"] = True
+
+        self._router.release_pages(2)   # let the background thread observe cancel on page 2
+        _wait_until(lambda: self._router.pages_served == 2)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("pages_seen") == 2)
+        time.sleep(0.05)   # let _run()'s post-loop guard check finish (no other observable hook)
+
+        rp = similarity._registry_path()
+        self.assertFalse(index_store.has_index(orig_key, rp),
+                          "a cancelled build must not persist a final index")
+        self.assertEqual(self._router.pages_served, 2, "page 3 must not be fetched after cancel")
+
+    def test_load_partial_uses_the_jobs_recorded_key_not_a_live_refetch(self):
+        similarity.index_functions({"instance_id": "aaaa", "background": True})
+        self._router.release_pages(1)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("pages_seen") == 1)
+        orig_key = similarity._jobs["aaaa"]["key"]
+
+        self._router._swapped = True   # live fingerprint would now differ
+        entry = similarity._load_partial("aaaa")
+        self.assertEqual(entry["index"]["binary_sha256"], orig_key,
+                          "_load_partial must tag the partial index with the build's own "
+                          "recorded key, not whatever the live fingerprint currently reads")
+
+        self._router._swapped = False
+        self._router.release_pages(2)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("status") == "ready")
+
+    def test_similar_functions_not_indexed_race_falls_back_to_completed_index(self):
+        similarity.index_functions({"instance_id": "aaaa", "background": True})
+        self._router.release_pages(1)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("pages_seen") == 1)
+
+        real_load_partial = similarity._load_partial
+
+        def load_partial_after_completion(iid):
+            # Simulate the build finishing in the window between _load()
+            # returning None and _load_partial() being consulted.
+            self._router.release_pages(2)
+            _wait_until(lambda: similarity._jobs.get(iid, {}).get("status") == "ready")
+            return real_load_partial(iid)
+
+        similarity._load_partial = load_partial_after_completion
+        try:
+            out = similarity.similar_functions({"instance_id": "aaaa", "func": "0x1001", "top_k": 5})
+        finally:
+            similarity._load_partial = real_load_partial
+
+        self.assertNotIn("not_indexed", out)
+        self.assertFalse(out.get("partial", False))
         self.assertIn("0x1002", [r["addr"] for r in out["results"]])
 
 
