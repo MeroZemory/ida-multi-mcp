@@ -119,16 +119,17 @@ class JTransBackend:
 
     def embed_batch(self, token_lists: list[list[str]]) -> list[list[float]]:
         """token_lists -> unit-normalized [CLS] vectors (list[list[float]])."""
+        if not token_lists:
+            return []
         import torch
         tok, model, dev = _load(self.model_id, self.tokenizer_id)
-        vecs: list[list[float]] = []
+        texts = [" ".join(toks) if toks else "" for toks in token_lists]
         with torch.no_grad():
-            for toks in token_lists:
-                enc = tok(" ".join(toks) if toks else "", return_tensors="pt",
-                          truncation=True, max_length=self.max_len)
-                enc = {k: v.to(dev) for k, v in enc.items()}
-                v = model(**enc).last_hidden_state[0, 0]              # [CLS]
-                vecs.append(torch.nn.functional.normalize(v, dim=0).cpu().tolist())
+            enc = tok(texts, return_tensors="pt", truncation=True,
+                      max_length=self.max_len, padding=True)
+            enc = {k: v.to(dev) for k, v in enc.items()}
+            cls = model(**enc).last_hidden_state[:, 0]          # [CLS] per row
+            vecs = torch.nn.functional.normalize(cls, dim=1).cpu().tolist()
         return vecs
 
     def unk_rate(self, token_lists: list[list[str]]) -> float:

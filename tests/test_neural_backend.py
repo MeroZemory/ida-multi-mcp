@@ -45,5 +45,76 @@ class SelectDeviceTest(unittest.TestCase):
         self.assertEqual(neural_backend._select_device(), "cpu")
 
 
+class EmbedBatchTest(unittest.TestCase):
+    def test_empty_list_returns_empty_without_torch(self):
+        # Must not require torch/transformers to be installed: verifies the
+        # guard runs before `import torch`.
+        backend = neural_backend.JTransBackend("unused-model-id", "unused-tok-id")
+        self.assertEqual(backend.embed_batch([]), [])
+
+
+@unittest.skipUnless(neural_backend.is_available(), _SKIP_REASON)
+class EmbedBatchBatchingTest(unittest.TestCase):
+    """Verifies embed_batch's real tensor batching logic (padding, attention
+    mask, [CLS] indexing, output ordering) via a hand-mocked _load() --
+    fake-but-real small torch tensors, no real transformers model needed.
+    """
+
+    def setUp(self):
+        import torch
+
+        class _FakeTokenizer:
+            def __call__(self, texts, return_tensors, truncation, max_length, padding):
+                # One token per character (deterministic, easy to reason about);
+                # pad to the longest text in the batch (mirrors a real tokenizer).
+                lengths = [max(len(t), 1) for t in texts]
+                width = max(lengths)
+                input_ids = torch.zeros((len(texts), width), dtype=torch.long)
+                attention_mask = torch.zeros((len(texts), width), dtype=torch.long)
+                for i, n in enumerate(lengths):
+                    attention_mask[i, :n] = 1
+                return {"input_ids": input_ids, "attention_mask": attention_mask}
+
+        class _FakeOutput:
+            def __init__(self, last_hidden_state):
+                self.last_hidden_state = last_hidden_state
+
+        class _FakeModel:
+            def __call__(self, input_ids, attention_mask):
+                batch, width = input_ids.shape
+                # 4-dim hidden state; row i's [CLS] (position 0) is a one-hot
+                # encoding of i, so a transposed/misindexed batch is detectable
+                # by decoding argmax back to the row index.
+                hidden = torch.zeros((batch, width, 4))
+                for i in range(batch):
+                    hidden[i, 0, i % 4] = 1.0
+                return _FakeOutput(hidden)
+
+        self._tok, self._model, self._dev = _FakeTokenizer(), _FakeModel(), "cpu"
+        self._orig_load = neural_backend._load
+        neural_backend._load = lambda model_id, tokenizer_id: (
+            self._tok, self._model, self._dev)
+
+    def tearDown(self):
+        neural_backend._load = self._orig_load
+
+    def test_batched_output_preserves_order_and_count(self):
+        backend = neural_backend.JTransBackend("fake-model", "fake-tok")
+        token_lists = [["a", "b", "c"], ["d"], ["e", "f"]]
+        vecs = backend.embed_batch(token_lists)
+        self.assertEqual(len(vecs), 3)
+        for i, v in enumerate(vecs):
+            self.assertEqual(len(v), 4)
+            decoded = max(range(4), key=lambda j: v[j])
+            self.assertEqual(decoded, i % 4,
+                              f"row {i}'s decoded index doesn't match -- "
+                              "batch dimension may be transposed or misindexed")
+
+    def test_empty_token_list_entry_within_a_nonempty_batch(self):
+        backend = neural_backend.JTransBackend("fake-model", "fake-tok")
+        vecs = backend.embed_batch([["a", "b"], [], ["c"]])
+        self.assertEqual(len(vecs), 3)
+
+
 if __name__ == "__main__":
     unittest.main()
