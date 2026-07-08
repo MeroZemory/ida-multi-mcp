@@ -522,6 +522,43 @@ class PartialIndexTest(unittest.TestCase):
         self.assertNotIn("_partial_cache", job,
                           "a stale write-back must not resurrect cleared partial state")
 
+    def test_load_partial_write_back_respects_generation_bump(self):
+        # Directly inject a "building" job (grey-box) so this test isolates
+        # the gen-mismatch guard itself, rather than staging a full realistic
+        # error-then-retry sequence (which would be racy/slow to set up).
+        similarity._jobs["aaaa"] = {
+            "status": "building", "gen": 1,
+            "live_records": _corpus()["aaaa"][:2],
+        }
+
+        entered = threading.Event()
+        resume = threading.Event()
+        real_assemble = similarity._assemble_index
+
+        def blocking_assemble(*args, **kwargs):
+            entered.set()
+            resume.wait(timeout=5)
+            return real_assemble(*args, **kwargs)
+
+        similarity._assemble_index = blocking_assemble
+        try:
+            t = threading.Thread(target=similarity._load_partial, args=("aaaa",))
+            t.start()
+            self.assertTrue(entered.wait(timeout=5))
+
+            # Simulate a retried build superseding this one (a fresh
+            # _start_background call always bumps gen).
+            with similarity._jobs_lock:
+                similarity._jobs["aaaa"]["gen"] = 2
+
+            resume.set()
+            t.join(timeout=5)
+        finally:
+            similarity._assemble_index = real_assemble
+
+        self.assertIsNone(similarity._jobs["aaaa"].get("_partial_cache"),
+                           "a write-back for a superseded generation must be dropped")
+
 
 if __name__ == "__main__":
     unittest.main()
