@@ -83,11 +83,15 @@ class EmbedBatchBatchingTest(unittest.TestCase):
             def __call__(self, input_ids, attention_mask):
                 batch, width = input_ids.shape
                 # 4-dim hidden state; row i's [CLS] (position 0) is a one-hot
-                # encoding of i, so a transposed/misindexed batch is detectable
-                # by decoding argmax back to the row index.
+                # encoding of (i + that row's real, masked sequence length).
+                # Folding attention_mask into the *class index* (not just
+                # magnitude, which L2-normalize would erase) means a batch
+                # transposition/misindexing AND a dropped/wrong attention_mask
+                # are both detectable by decoding argmax back to the row.
                 hidden = torch.zeros((batch, width, 4))
                 for i in range(batch):
-                    hidden[i, 0, i % 4] = 1.0
+                    real_len = int(attention_mask[i].sum().item())
+                    hidden[i, 0, (i + real_len) % 4] = 1.0
                 return _FakeOutput(hidden)
 
         self._tok, self._model, self._dev = _FakeTokenizer(), _FakeModel(), "cpu"
@@ -101,14 +105,21 @@ class EmbedBatchBatchingTest(unittest.TestCase):
     def test_batched_output_preserves_order_and_count(self):
         backend = neural_backend.JTransBackend("fake-model", "fake-tok")
         token_lists = [["a", "b", "c"], ["d"], ["e", "f"]]
+        # Mirrors embed_batch's own text construction, to independently
+        # compute each row's expected (real, masked) sequence length.
+        texts = [" ".join(toks) if toks else "" for toks in token_lists]
+        lengths = [max(len(t), 1) for t in texts]
+
         vecs = backend.embed_batch(token_lists)
         self.assertEqual(len(vecs), 3)
         for i, v in enumerate(vecs):
             self.assertEqual(len(v), 4)
             decoded = max(range(4), key=lambda j: v[j])
-            self.assertEqual(decoded, i % 4,
-                              f"row {i}'s decoded index doesn't match -- "
-                              "batch dimension may be transposed or misindexed")
+            expected = (i + lengths[i]) % 4
+            self.assertEqual(decoded, expected,
+                              f"row {i}'s decoded index doesn't match -- batch "
+                              "dimension may be transposed/misindexed, or "
+                              "attention_mask isn't reaching the model correctly")
 
     def test_empty_token_list_entry_within_a_nonempty_batch(self):
         backend = neural_backend.JTransBackend("fake-model", "fake-tok")

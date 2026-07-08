@@ -118,7 +118,10 @@ class JTransBackend:
         self.max_len = max_len
 
     def embed_batch(self, token_lists: list[list[str]]) -> list[list[float]]:
-        """token_lists -> unit-normalized [CLS] vectors (list[list[float]])."""
+        """token_lists -> unit-normalized [CLS] vectors (list[list[float]]).
+
+        One padded-batch tokenizer call + one forward pass per invocation
+        (not per item)."""
         if not token_lists:
             return []
         import torch
