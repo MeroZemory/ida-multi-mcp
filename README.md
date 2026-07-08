@@ -629,8 +629,8 @@ For issues, feature requests, or questions:
 
 <a href="https://www.star-history.com/?repos=MeroZemory%2Fida-multi-mcp&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=MeroZemory/ida-multi-mcp&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=MeroZemory/ida-multi-mcp&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=MeroZemory/ida-multi-mcp&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=MeroZemory/ida-multi-mcp&type=date&theme=dark&legend=top-left&sealed_token=rq_Qr8vB0W0iPa6IsP6zgxDrvFUrJZDwONt5NQxHUjXeoM9y3FNwaYlKwRERctHIR_uLnG6L6ne4Eh4h2srY73COsCSTty0k8JfOKGard7f2w3sTdJiPStA8VzzHOcdrUTOZh0oo0jfQfyPHtVvm5F3uIjlkV_aub7DLk_rmflFwemQmMa_ZFFasFHtp" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=MeroZemory/ida-multi-mcp&type=date&legend=top-left&sealed_token=rq_Qr8vB0W0iPa6IsP6zgxDrvFUrJZDwONt5NQxHUjXeoM9y3FNwaYlKwRERctHIR_uLnG6L6ne4Eh4h2srY73COsCSTty0k8JfOKGard7f2w3sTdJiPStA8VzzHOcdrUTOZh0oo0jfQfyPHtVvm5F3uIjlkV_aub7DLk_rmflFwemQmMa_ZFFasFHtp" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=MeroZemory/ida-multi-mcp&type=date&legend=top-left&sealed_token=rq_Qr8vB0W0iPa6IsP6zgxDrvFUrJZDwONt5NQxHUjXeoM9y3FNwaYlKwRERctHIR_uLnG6L6ne4Eh4h2srY73COsCSTty0k8JfOKGard7f2w3sTdJiPStA8VzzHOcdrUTOZh0oo0jfQfyPHtVvm5F3uIjlkV_aub7DLk_rmflFwemQmMa_ZFFasFHtp" />
  </picture>
 </a>
