@@ -114,6 +114,22 @@ guard rather than to `_on_page`'s early-stop (which is real but not the
 mechanism actually load-bearing here). No new CRITICAL/HIGH findings. Design
 considered converged.
 
+## Post-review fix (found during implementation planning)
+
+`_load_partial`'s guard (§2, as originally written) gated on
+`job.get("status") != "building"`, returning `None` for any other status —
+but §4 explicitly says the **error** path should keep serving the
+last-known partial data (`live_records`/`_partial_cache` are deliberately
+*not* cleared on error, specifically so `similar_functions` can keep
+returning it labeled `partial: true`). §2's code as written could never
+reach that data, since it always returned `None` once `status` left
+`"building"`. This contradiction survived all three review rounds. §2 below
+is corrected to check `status in ("building", "error")` in both the read
+guard and the write-back guard — an errored job's `live_records` are frozen
+(the build will not progress further under that `gen`), so caching a
+computed snapshot of them is always safe, not just a "still fresh enough"
+debounce.
+
 ## Approach (v3)
 
 No new files, no new persisted formats, no mutation of shared state.
@@ -178,7 +194,7 @@ def _load_partial(iid: str) -> dict | None:
     """
     with _jobs_lock:
         job = _jobs.get(iid)
-        if not job or job.get("status") != "building":
+        if not job or job.get("status") not in ("building", "error"):
             return None
         gen = job["gen"]
         recs = job.get("live_records")
@@ -197,14 +213,15 @@ def _load_partial(iid: str) -> dict | None:
     entry = {"index": idx, "anchor_index": sim_score.build_anchor_index(funcs)}
     with _jobs_lock:
         j = _jobs.get(iid)
-        # Only cache back if this is STILL the same build, still in progress.
-        # A build that finished/errored/was superseded while we were off the
-        # lock computing `entry` must not have its (now-stale, and for a
-        # finished build, un-freed) result written back — this is the v2→v3
-        # fix for the completion race (finding 1). The caller still gets the
-        # freshly-computed `entry` for THIS call either way; only the cache
-        # write is conditional.
-        if j is not None and j.get("gen") == gen and j.get("status") == "building":
+        # Only cache back if this is STILL the same build (gen match) and
+        # still in a state we're allowed to serve ("building" or "error" --
+        # a build that finished or was superseded by a NEWER generation
+        # while we were off the lock computing `entry` must not have its
+        # (now-stale, and for a finished build, un-freed) result written
+        # back — this is the v2→v3 fix for the completion race (finding 1).
+        # The caller still gets the freshly-computed `entry` for THIS call
+        # either way; only the cache write is conditional.
+        if j is not None and j.get("gen") == gen and j.get("status") in ("building", "error"):
             j["_partial_cache"] = {"at": now, "gen": gen, "entry": entry}
     return entry
 ```
