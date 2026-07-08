@@ -75,6 +75,15 @@ def resolve_paths(download: bool = True) -> tuple[str, str]:
     return str(model_dir), tok
 
 
+def _select_device() -> str:
+    import torch
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 @functools.lru_cache(maxsize=2)
 def _load(model_id: str, tokenizer_id: str):
     import torch
@@ -92,7 +101,7 @@ def _load(model_id: str, tokenizer_id: str):
     tok = AutoTokenizer.from_pretrained(tokenizer_id)
     model = BinBertModel.from_pretrained(
         model_id, add_pooling_layer=False, ignore_mismatched_sizes=True)
-    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    dev = _select_device()
     model.to(dev).eval()
     return tok, model, dev
 
