@@ -171,6 +171,75 @@ class NeuralRecallTest(unittest.TestCase):
         similarity.index_functions({"instance_id": "nn", "background": False})
         self.assertEqual(len(index_store.read_vectors("sha-nn", rp)), 3)
 
+    def test_sync_branch_skips_embedding_for_zero_valid_functions(self):
+        # Reuse this test class's corpus/mocks but swap in a router that
+        # reports zero valid functions (every func_features record is an
+        # error stub) -- mirrors the real shape func_features returns for
+        # an unextractable function (see test_similarity.py's _ErrRouter).
+        class _EmptyValidRouter:
+            def route_request(self, method, params):
+                name = params.get("name")
+                if name == "binary_fingerprint":
+                    payload = {"sha256": "sha-empty", "md5": None,
+                              "function_count": 1, "arch": "x86_64"}
+                elif name == "func_features":
+                    payload = {"functions": [{"addr": "0x1", "error": "no func"}],
+                              "total": 1, "cursor": {"done": True}}
+                else:
+                    return {"error": f"unknown tool {name}"}
+                return {"content": [{"type": "text", "text": json.dumps(payload)}],
+                        "structuredContent": payload}
+
+        similarity.set_router(_EmptyValidRouter())
+        called = {"n": 0}
+
+        def _raise_if_called(*a, **k):
+            called["n"] += 1
+            raise AssertionError("get_backend() must not be called for zero valid functions")
+
+        orig_get_backend = neural_backend.get_backend
+        neural_backend.get_backend = _raise_if_called
+        try:
+            res = similarity.index_functions({"instance_id": "nn", "background": False})
+        finally:
+            neural_backend.get_backend = orig_get_backend
+
+        self.assertEqual(res["function_count"], 0)
+        self.assertEqual(called["n"], 0)
+
+    def test_background_branch_reports_done_for_zero_valid_functions(self):
+        import time
+
+        class _EmptyValidRouter:
+            def route_request(self, method, params):
+                name = params.get("name")
+                if name == "binary_fingerprint":
+                    payload = {"sha256": "sha-empty-bg", "md5": None,
+                              "function_count": 1, "arch": "x86_64"}
+                elif name == "func_features":
+                    payload = {"functions": [{"addr": "0x1", "error": "no func"}],
+                              "total": 1, "cursor": {"done": True}}
+                else:
+                    return {"error": f"unknown tool {name}"}
+                return {"content": [{"type": "text", "text": json.dumps(payload)}],
+                        "structuredContent": payload}
+
+        similarity.set_router(_EmptyValidRouter())
+        similarity.index_functions({"instance_id": "nn", "background": True})
+
+        deadline = time.time() + 5.0
+        st = {}
+        while time.time() < deadline:
+            st = similarity.index_status({"instance_id": "nn"})
+            if st.get("embed_status") == "done":
+                break
+            time.sleep(0.01)
+        else:
+            self.fail("embed_status never reached 'done' within 5s "
+                      f"(last status: {st})")
+
+        self.assertEqual(st["embed_total"], 0)
+
 
 class NeuralBackendPathsTest(unittest.TestCase):
     def test_env_override_and_default_tokenizer(self):

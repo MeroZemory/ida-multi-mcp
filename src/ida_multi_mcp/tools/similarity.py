@@ -345,7 +345,7 @@ def index_functions(arguments: dict) -> dict:
         valid_addrs = list(idx.get("functions", {}).keys())
         fc, sk = idx.get("function_count", len(valid_addrs)), 0
     neural = False
-    if _neural_enabled():
+    if _neural_enabled() and valid_addrs:
         _embed_incremental(iid, key, rp, valid_addrs)
         neural = bool(index_store.read_vectors(key, rp))
     return {"index_id": key, "function_count": fc, "skipped_count": sk,
@@ -398,7 +398,8 @@ def _start_background(iid: str, key: str, fp: dict, binary_name: str,
                 with _jobs_lock:
                     _jobs[iid].update(embed_status="embedding",
                                       embed_total=len(valid_addrs), embed_done=0)
-                _embed_incremental(iid, key, rp, valid_addrs)
+                if valid_addrs:
+                    _embed_incremental(iid, key, rp, valid_addrs)
                 with _jobs_lock:
                     if not _jobs[iid].get("cancel"):
                         _jobs[iid].update(embed_status="done")
