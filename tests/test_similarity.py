@@ -9,13 +9,15 @@ import json
 import os
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
 SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC_ROOT))
 
-from ida_multi_mcp.tools import sim_score, similarity  # noqa: E402
+from ida_multi_mcp.tools import index_store, sim_score, similarity  # noqa: E402
 
 
 # --- synthetic feature corpus -------------------------------------------------
@@ -295,6 +297,143 @@ class SimilarityErrorRecordTest(unittest.TestCase):
         })
         self.assertIn("error", out)
         self.assertNotIn("KeyError", out["error"])
+
+
+def _wait_until(predicate, timeout=5.0, interval=0.01):
+    """Poll `predicate()` until truthy or `timeout` elapses; raise on timeout.
+
+    The background build genuinely runs on a separate thread (that is the
+    behavior under test), so tests synchronize on job-state, not sleeps.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return
+        time.sleep(interval)
+    raise AssertionError(f"condition not met within {timeout}s")
+
+
+class PausableRouter:
+    """Serves func_features / binary_fingerprint like MockRouter, but each
+    '*' (paginated) func_features call blocks on a counting semaphore until
+    the test calls release_pages(n) — lets tests pause a background build
+    mid-page and inspect/exercise partial state deterministically. Optional
+    swap_after_pages flips the fingerprint after that many pages have been
+    served, simulating a mid-build binary change.
+    """
+
+    def __init__(self, corpus):
+        self._corpus = corpus
+        self._budget = threading.Semaphore(0)
+        self.pages_served = 0
+        self.swap_after_pages = None
+        self._swapped = False
+
+    def release_pages(self, n):
+        for _ in range(n):
+            self._budget.release()
+
+    def route_request(self, method, params):
+        name = params.get("name")
+        args = params.get("arguments", {})
+        iid = args.get("instance_id")
+        feats = self._corpus.get(iid)
+        if feats is None:
+            return {"error": f"no instance {iid}"}
+        if name == "binary_fingerprint":
+            sha = f"sha-{iid}-swapped" if self._swapped else f"sha-{iid}"
+            payload = {"sha256": sha, "md5": None,
+                       "function_count": len(feats), "arch": "x86_64"}
+        elif name == "func_features":
+            addrs = args.get("addrs", "*")
+            if addrs == "*":
+                self._budget.acquire()
+                self.pages_served += 1
+                if (self.swap_after_pages is not None
+                        and self.pages_served > self.swap_after_pages):
+                    self._swapped = True
+                offset = int(args.get("offset", 0))
+                count = int(args.get("count", 500))
+                page = feats[offset:offset + count]
+                nxt = offset + len(page)
+                cursor = {"done": True} if nxt >= len(feats) else {"next": nxt}
+                payload = {"functions": page, "total": len(feats), "cursor": cursor}
+            else:
+                match = [f for f in feats if f["addr"] == str(addrs) or f["name"] == str(addrs)]
+                payload = {"functions": match[:1], "total": len(match),
+                           "cursor": {"done": True}}
+        else:
+            return {"error": f"unknown tool {name}"}
+        return {"content": [{"type": "text", "text": json.dumps(payload)}],
+                "structuredContent": payload}
+
+
+class PartialIndexTest(unittest.TestCase):
+    """Background-build instrumentation, partial-serving, and their race/edge
+    cases. Uses PausableRouter to deterministically pause a build mid-page —
+    real threading is exercised (this is the behavior under test), so tests
+    synchronize on `_jobs` state via `_wait_until`, never on sleeps alone.
+    """
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self._registry_path = os.path.join(self._td.name, "instances.json")
+        self._corpus = {"aaaa": _corpus()["aaaa"]}   # 6 functions
+        self._router = PausableRouter(self._corpus)
+        similarity.set_registry(MockRegistry(self._registry_path, self._corpus))
+        similarity.set_router(self._router)
+        similarity._jobs.clear()
+        similarity._loaded.clear()
+        self._orig_page = similarity.PAGE
+        similarity.PAGE = 2   # 6 functions / 2-per-page = 3 pages, so tests can pause mid-build
+
+    def tearDown(self):
+        similarity.PAGE = self._orig_page
+        similarity._jobs.clear()
+        similarity._loaded.clear()
+        self._td.cleanup()
+
+    def test_background_build_exposes_gen_and_live_records(self):
+        res = similarity.index_functions({"instance_id": "aaaa", "background": True})
+        self.assertEqual(res["status"], "building")
+        self._router.release_pages(1)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("pages_seen") == 1)
+
+        job = similarity._jobs["aaaa"]
+        self.assertIsInstance(job["gen"], int)
+        self.assertEqual(len(job["live_records"]), 2)   # exactly page 1's functions
+        self.assertEqual(job["status"], "building")
+
+        self._router.release_pages(2)   # let the remaining 2 pages through
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("status") == "ready")
+        self.assertEqual(similarity._jobs["aaaa"]["pages_seen"], 3)
+
+    def test_completion_clears_live_records_and_partial_cache(self):
+        similarity.index_functions({"instance_id": "aaaa", "background": True})
+        self._router.release_pages(3)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("status") == "ready")
+        job = similarity._jobs["aaaa"]
+        self.assertNotIn("live_records", job)
+        self.assertNotIn("_partial_cache", job)
+
+    def test_binary_change_mid_build_stops_and_does_not_persist(self):
+        orig_key, _ = similarity._instance_key("aaaa")   # fingerprint BEFORE any swap
+        orig_n = similarity._FP_CHECK_EVERY_N_PAGES
+        similarity._FP_CHECK_EVERY_N_PAGES = 1   # check every page for a deterministic test
+        self._router.swap_after_pages = 1        # fingerprint flips once page 2 is requested
+        try:
+            similarity.index_functions({"instance_id": "aaaa", "background": True})
+            self._router.release_pages(3)
+            _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("status") == "error")
+        finally:
+            similarity._FP_CHECK_EVERY_N_PAGES = orig_n
+
+        job = similarity._jobs["aaaa"]
+        self.assertIn("binary changed", job["error"])
+        self.assertLessEqual(job["pages_seen"], 2)   # detected within the checked bound
+        rp = similarity._registry_path()
+        self.assertFalse(index_store.has_index(orig_key, rp),
+                          "an error/superseded build must not persist a final index")
 
 
 if __name__ == "__main__":
