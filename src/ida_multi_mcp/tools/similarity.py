@@ -618,6 +618,7 @@ def similar_functions(arguments: dict) -> dict:
 
     results: list[dict] = []
     not_indexed: list[str] = []
+    partial_coverage: dict[str, int] = {}
     gallery_size = 0
     for giid in gallery_iids:
         gkey, _ = _instance_key(giid)
@@ -625,9 +626,17 @@ def similar_functions(arguments: dict) -> dict:
             not_indexed.append(giid)
             continue
         entry = _load(gkey, rp)
+        partial = False
+        if entry is None:
+            entry = _load_partial(giid)
+            partial = entry is not None
         if entry is None:
             not_indexed.append(giid)
             continue
+        if partial:
+            # Same `entry` used for scoring below -- never a second, separately
+            # -timed lookup into `_jobs`.
+            partial_coverage[giid] = entry["index"]["function_count"]
         idx = entry["index"]
         funcs = idx.get("functions", {})
         gallery_size += len(funcs)
@@ -680,6 +689,9 @@ def similar_functions(arguments: dict) -> dict:
         "gallery_size": gallery_size,
         "results": results[:top_k],
     }
+    if partial_coverage:
+        out["partial"] = True
+        out["coverage"] = {giid: {"done": n, "total": None} for giid, n in partial_coverage.items()}
     if not_indexed:
         out["not_indexed"] = not_indexed
         out["hint"] = "Run index_functions on the listed instances first."

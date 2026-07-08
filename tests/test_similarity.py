@@ -559,6 +559,56 @@ class PartialIndexTest(unittest.TestCase):
         self.assertIsNone(similarity._jobs["aaaa"].get("_partial_cache"),
                            "a write-back for a superseded generation must be dropped")
 
+    def test_similar_functions_serves_partial_results_mid_build(self):
+        similarity.index_functions({"instance_id": "aaaa", "background": True})
+        self._router.release_pages(1)   # page 1 = addrs 0x1001, 0x1002 (the encrypt twins)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("pages_seen") == 1)
+
+        out = similarity.similar_functions({"instance_id": "aaaa", "func": "0x1001", "top_k": 5})
+        self.assertTrue(out.get("partial"))
+        self.assertEqual(out["coverage"]["aaaa"]["done"], 2)
+        self.assertIsNone(out["coverage"]["aaaa"]["total"])
+        addrs = [r["addr"] for r in out["results"]]
+        self.assertIn("0x1002", addrs)          # its twin landed in page 1
+        for a in addrs:
+            self.assertIn(a, ("0x1001", "0x1002"))   # nothing from later pages
+
+        self._router.release_pages(2)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("status") == "ready")
+
+        out2 = similarity.similar_functions({"instance_id": "aaaa", "func": "0x1001", "top_k": 5})
+        self.assertFalse(out2.get("partial", False))
+        self.assertNotIn("coverage", out2)
+
+    def test_similar_functions_query_not_yet_covered_does_not_crash(self):
+        similarity.index_functions({"instance_id": "aaaa", "background": True})
+        self._router.release_pages(1)   # page 1 only has 0x1001/0x1002
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("pages_seen") == 1)
+
+        # 0x1005 ("misc_z") is in page 3, not yet processed by the background
+        # loop -- but func_features resolves single-address queries directly
+        # (unrelated to the paginated '*' gate), so this must not crash.
+        out = similarity.similar_functions({"instance_id": "aaaa", "func": "0x1005", "top_k": 5})
+        self.assertNotIn("error", out)
+        self.assertTrue(out.get("partial"))
+        self.assertEqual(out["query"]["addr"], "0x1005")
+
+        self._router.release_pages(2)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("status") == "ready")
+
+    def test_similar_functions_serves_partial_after_build_error(self):
+        similarity.index_functions({"instance_id": "aaaa", "background": True})
+        self._router.release_pages(1)
+        _wait_until(lambda: similarity._jobs.get("aaaa", {}).get("pages_seen") == 1)
+        with similarity._jobs_lock:
+            similarity._jobs["aaaa"]["status"] = "error"
+            similarity._jobs["aaaa"]["error"] = "synthetic failure for this test"
+
+        out = similarity.similar_functions({"instance_id": "aaaa", "func": "0x1001", "top_k": 5})
+        self.assertTrue(out.get("partial"))
+        self.assertNotIn("not_indexed", out)
+        self.assertIn("0x1002", [r["addr"] for r in out["results"]])
+
 
 if __name__ == "__main__":
     unittest.main()
