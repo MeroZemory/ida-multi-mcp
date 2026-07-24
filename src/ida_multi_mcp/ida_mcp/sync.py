@@ -62,17 +62,39 @@ def _sync_wrapper(ff):
 
     def runned():
         if not call_stack.empty():
-            last_func_name = call_stack.get()
-            error_str = f"Call stack is not empty while calling the function {ff.__name__} from {last_func_name}"
-            raise IDASyncError(error_str)
+            # Non-blocking: a reentrant @idasync call from within another
+            # tool's ff() on this same main thread may have drained the queue
+            # between empty() and get().
+            try:
+                last_func_name = call_stack.get_nowait()
+            except queue.Empty:
+                last_func_name = "<empty>"
+            # Report through res_container instead of raising: execute_sync
+            # swallows the exception, and the res_container.get() below would
+            # then block the requesting thread forever on an empty queue.
+            res_container.put(IDASyncError(
+                f"Call stack is not empty while calling the function "
+                f"{ff.__name__} from {last_func_name}"
+            ))
+            return
 
         call_stack.put((ff.__name__))
+        # Batch mode must be toggled on the IDA main thread. Doing it in
+        # sync_wrapper() ran idc.batch() on the requesting HTTP worker thread.
+        old_batch = idc.batch(1)
         try:
             res_container.put(ff())
         except Exception as x:
             res_container.put(x)
         finally:
-            call_stack.get()
+            idc.batch(old_batch)
+            # Non-blocking: a reentrant @idasync invoked synchronously inside
+            # ff() may have already popped our entry. A blocking get() here
+            # would freeze the IDA main thread and hang every later call.
+            try:
+                call_stack.get_nowait()
+            except queue.Empty:
+                pass
 
     idaapi.execute_sync(runned, idaapi.MFF_WRITE)
     res = res_container.get()
@@ -90,40 +112,40 @@ def _normalize_timeout(value: object) -> float | None:
 
 
 def sync_wrapper(ff, timeout_override: float | None = None):
-    """Wrapper to enable batch mode during IDA synchronization."""
+    """Wrapper to enable timeout and cancellation during IDA synchronization.
+
+    Batch mode is handled inside _sync_wrapper so that idc.batch() runs on the
+    IDA main thread rather than on the calling HTTP worker thread.
+    """
     # Capture cancel event from thread-local before execute_sync
     cancel_event = get_current_cancel_event()
 
-    old_batch = idc.batch(1)
-    try:
-        timeout = timeout_override
-        if timeout is None:
-            timeout = _get_tool_timeout_seconds()
-        if timeout > 0 or cancel_event is not None:
-            def timed_ff():
-                # Calculate deadline when execution starts on IDA main thread,
-                # not when the request was queued (avoids stale deadlines)
-                deadline = time.monotonic() + timeout if timeout > 0 else None
+    timeout = timeout_override
+    if timeout is None:
+        timeout = _get_tool_timeout_seconds()
+    if timeout > 0 or cancel_event is not None:
+        def timed_ff():
+            # Calculate deadline when execution starts on IDA main thread,
+            # not when the request was queued (avoids stale deadlines)
+            deadline = time.monotonic() + timeout if timeout > 0 else None
 
-                def profilefunc(frame, event, arg):
-                    # Check cancellation first (higher priority)
-                    if cancel_event is not None and cancel_event.is_set():
-                        raise CancelledError("Request was cancelled")
-                    if deadline is not None and time.monotonic() >= deadline:
-                        raise IDASyncError(f"Tool timed out after {timeout:.2f}s")
+            def profilefunc(frame, event, arg):
+                # Check cancellation first (higher priority)
+                if cancel_event is not None and cancel_event.is_set():
+                    raise CancelledError("Request was cancelled")
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise IDASyncError(f"Tool timed out after {timeout:.2f}s")
 
-                old_profile = sys.getprofile()
-                sys.setprofile(profilefunc)
-                try:
-                    return ff()
-                finally:
-                    sys.setprofile(old_profile)
+            old_profile = sys.getprofile()
+            sys.setprofile(profilefunc)
+            try:
+                return ff()
+            finally:
+                sys.setprofile(old_profile)
 
-            timed_ff.__name__ = ff.__name__
-            return _sync_wrapper(timed_ff)
-        return _sync_wrapper(ff)
-    finally:
-        idc.batch(old_batch)
+        timed_ff.__name__ = ff.__name__
+        return _sync_wrapper(timed_ff)
+    return _sync_wrapper(ff)
 
 
 def idasync(f):
