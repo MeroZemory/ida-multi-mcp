@@ -7,6 +7,7 @@ import ida_bytes
 import ida_frame
 import ida_ida
 import idaapi
+import idc
 
 from .rpc import tool
 from .sync import idasync, ida_major
