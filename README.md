@@ -4,7 +4,7 @@ Multi-instance IDA Pro MCP server for simultaneous reverse engineering of multip
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
-![IDA Pro](https://img.shields.io/badge/IDA%20Pro-8.3%2B-orange.svg)
+![IDA Pro](https://img.shields.io/badge/IDA%20Pro-8.5%2B-orange.svg)
 ![MCP](https://img.shields.io/badge/MCP-compatible-brightgreen.svg)
 
 ## ✨ What's New
@@ -58,14 +58,16 @@ MCP Client (Claude, Cursor, etc.)
 - **Cross-binary analysis** — Target specific instances via `instance_id` parameter
 - **Function-similarity search** — `similar_functions` / `compare_functions` rank BCSD matches (instruction-shingle MinHash + API/string/constant anchors + CFG/shape) within a binary or across instances. Optional on-demand **neural recall** (jTrans embeddings) recovers anchor-less cross-compiler twins that lexical/structural signals miss — enable with `pip install ida-multi-mcp[neural]` + `IDA_MCP_SIM_NEURAL=1` (model auto-downloads to `~/.ida-mcp/models/`)
 - **Smart instance tracking** — 4-character IDs (k7m2, px3a, etc.) with automatic binary-change detection
-- **IDA 8.3–9.3 compatible** — Built-in version compatibility shims (`compat.py`)
+- **IDA 8.5–9.3 compatible** — Version compatibility shims (`compat.py`) for entry-point and `inf_*` API moves
 - **File-based registry** — Tracks all active instances (GUI and headless)
 - **Graceful fallback** — Handles binary changes, stale instances, and crashes
 
 ## Requirements
 
 - Python 3.11 or later
-- IDA Pro 8.3+ (9.0 recommended)
+- IDA Pro 8.5+ (9.1 or later recommended)
+
+> **IDA 9.0 SP0 (build 240925) is not supported.** That build shipped without `func_t.get_name`, `func_t.get_prototype`, and `tinfo_t.get_udm`, which several tools call directly. Use IDA 9.0 SP1 (build 241217) or later.
 
 ## Manual Installation
 
@@ -146,10 +148,10 @@ The canonical installation guide an AI agent should follow is at
 
 ### Supported MCP Clients
 
-Works with any MCP-compatible client. `ida-multi-mcp --install` auto-configures all detected clients (Claude Code, Claude Desktop, Cursor, Windsurf, VS Code, Zed, and 20+ more).
+Works with any MCP-compatible client. `ida-multi-mcp --install` auto-configures all detected clients (Claude Code, Claude Desktop, Cursor, Windsurf, VS Code, Zed, and 20 more).
 
 <details>
-<summary>Full tested client list (19)</summary>
+<summary>Full auto-configured client list (26)</summary>
 
 | Client | Type |
 |--------|------|
@@ -159,11 +161,14 @@ Works with any MCP-compatible client. `ida-multi-mcp --install` auto-configures 
 | VS Code (Copilot) | IDE |
 | Windsurf | IDE |
 | Zed | IDE |
+| Antigravity IDE | IDE |
 | Augment Code | IDE |
 | Cline | Extension |
 | Kilo Code | Extension |
 | Kiro | IDE |
 | LM Studio | Desktop |
+| BoltAI | Desktop |
+| Perplexity | Desktop |
 | Opencode | CLI |
 | Qodo Gen | Extension |
 | Roo Code | Extension |
@@ -172,6 +177,10 @@ Works with any MCP-compatible client. `ida-multi-mcp --install` auto-configures 
 | Amazon Q Developer CLI | CLI |
 | Copilot CLI | CLI |
 | Gemini CLI | CLI |
+| Qwen Coder | CLI |
+| Codex | CLI |
+| Crush | CLI |
+| Factory Droid | CLI |
 
 </details>
 
@@ -559,7 +568,7 @@ Do not use unquoted `\\?\...` project table keys, and do not use double-quoted W
 | Dynamic tool discovery | Future-proof, automatic updates, no hardcoded tool list |
 | Dual binary-change detection | Robust fallback if IDA hooks fail |
 | Subprocess-per-binary (idalib) | True parallelism, crash isolation, no in-process DB switching |
-| compat.py shims | Single source for IDA 8.3–9.3 API differences |
+| compat.py shims | Single source for IDA 8.5–9.3 API differences |
 
 ## Performance
 
@@ -610,11 +619,13 @@ Contributions welcome! Please ensure:
 
 This project was inspired by and builds upon [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) by [Duncan Ogilvie (mrexodia)](https://github.com/mrexodia). The IDA tool implementations (80+ tools) originated from ida-pro-mcp and have been absorbed into ida-multi-mcp as a bundled package, adding multi-instance orchestration and headless idalib support on top.
 
+Upstream has since grown its own multi-session story: `idalib-mcp` is now a supervisor that keeps each open database in a persistent worker process, requires an explicit `database` argument per call, and can adopt an already-running worker or GUI for the same path. The two projects have converged on explicit session routing but differ in approach — ida-multi-mcp discovers GUI instances through a shared file registry that each IDA plugin auto-registers with on startup, so no per-database endpoint configuration is needed on the client side.
+
 The installation approach (AI-agent-friendly installation guides) was influenced by [oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode) by [Yeongyu Yun (code-yeongyu)](https://github.com/code-yeongyu).
 
 ## Related Projects
 
-- **[ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp)** — The original single-instance IDA MCP plugin (tools originated from here) (MIT License)
+- **[ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp)** — The upstream IDA MCP plugin this project forked its tool implementations from; now also ships a multi-session `idalib-mcp` supervisor (MIT License)
 - **Claude Code** — MCP client with native support
 - **Cursor** — Alternative MCP-enabled editor
 
