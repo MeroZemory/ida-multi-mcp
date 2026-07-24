@@ -7,6 +7,27 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    name: lint (undefined names)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install ruff
+        run: python -m pip install --upgrade pip && pip install ruff
+
+      # IDA modules cannot be imported in CI, so undefined names inside the
+      # bundled ida_mcp package are invisible to pytest. A missing `import idc`
+      # silently turned every enum_upsert call into an error result until a
+      # static check caught it. F821/F811 only — style rules stay advisory.
+      - name: Check for undefined and redefined names
+        run: ruff check src/ tests/ --select F821,F811
+
   test:
     name: test (${{ matrix.os }}, py${{ matrix.python }})
     runs-on: ${{ matrix.os }}
