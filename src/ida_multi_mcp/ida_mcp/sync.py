@@ -40,9 +40,26 @@ class CancelledError(RequestCancelledError):
 logger = logging.getLogger(__name__)
 _TOOL_TIMEOUT_ENV = "IDA_MCP_TOOL_TIMEOUT_SEC"
 _DEFAULT_TOOL_TIMEOUT_SEC = 15.0
+
 # After the deadline fires ida_kernwin.set_cancelled(), how long a tool may keep
-# running so it can format a partial response before IDASyncError is raised.
-_NATIVE_CANCEL_GRACE_SEC = 5.0
+# running so it can notice the flag and format a partial response before
+# IDASyncError is raised.
+#
+# This does extend the worst case to timeout + grace. It only buys anything for
+# work that actually polls user_cancelled() (the C SDK calls); a pure-Python
+# loop just runs longer. Set to 0 to enforce the timeout strictly.
+_NATIVE_CANCEL_GRACE_ENV = "IDA_MCP_CANCEL_GRACE_SEC"
+_DEFAULT_NATIVE_CANCEL_GRACE_SEC = 5.0
+
+
+def _get_native_cancel_grace_seconds() -> float:
+    value = os.getenv(_NATIVE_CANCEL_GRACE_ENV, "").strip()
+    if value == "":
+        return _DEFAULT_NATIVE_CANCEL_GRACE_SEC
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        return _DEFAULT_NATIVE_CANCEL_GRACE_SEC
 
 
 def _get_tool_timeout_seconds() -> float:
@@ -146,6 +163,7 @@ def sync_wrapper(ff, timeout_override: float | None = None):
             # ida_auto.auto_wait. set_cancelled() is THREAD_SAFE, so firing it
             # from a Timer thread is safe.
             ida_kernwin.clr_cancelled()
+            grace = _get_native_cancel_grace_seconds()
             cancel_fired_at: list[float | None] = [None]
             native_timer: threading.Timer | None = None
             if deadline is not None:
@@ -166,7 +184,7 @@ def sync_wrapper(ff, timeout_override: float | None = None):
                 # IDASyncError. Beyond that we still raise to bound the
                 # response time.
                 fired_at = cancel_fired_at[0]
-                if fired_at is not None and time.monotonic() < fired_at + _NATIVE_CANCEL_GRACE_SEC:
+                if fired_at is not None and time.monotonic() < fired_at + grace:
                     return
                 if deadline is not None and time.monotonic() >= deadline:
                     raise IDASyncError(f"Tool timed out after {timeout:.2f}s")
