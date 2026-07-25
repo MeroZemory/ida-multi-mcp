@@ -28,6 +28,8 @@ import idaapi
 import idautils
 import idc
 
+from . import compat
+
 from .sync import IDAError
 
 # ============================================================================
@@ -431,8 +433,8 @@ def get_image_size() -> int:
     except AttributeError:
         import ida_ida
 
-        omin_ea = ida_ida.inf_get_omin_ea()
-        omax_ea = ida_ida.inf_get_omax_ea()
+        omin_ea = compat.inf_get_omin_ea()
+        omax_ea = compat.inf_get_omax_ea()
     image_size = omax_ea - omin_ea
     header = idautils.peutils_t().header()
     if header and header[:4] == b"PE\0\0":

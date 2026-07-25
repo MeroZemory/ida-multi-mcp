@@ -17,6 +17,8 @@ import ida_xref
 import ida_ua
 import ida_name
 import idc
+
+from . import compat
 from .rpc import tool
 from .sync import idasync, tool_timeout
 from .utils import (
@@ -611,7 +613,7 @@ def find_bytes(
             # Parse the pattern
             compiled = ida_bytes.compiled_binpat_vec_t()
             err = ida_bytes.parse_binpat_str(
-                compiled, ida_ida.inf_get_min_ea(), pattern, 16
+                compiled, compat.inf_get_min_ea(), pattern, 16
             )
             if err:
                 results.append(
@@ -625,8 +627,8 @@ def find_bytes(
                 continue
 
             # Search with early exit
-            ea = ida_ida.inf_get_min_ea()
-            max_ea = ida_ida.inf_get_max_ea()
+            ea = compat.inf_get_min_ea()
+            max_ea = compat.inf_get_max_ea()
             while ea != idaapi.BADADDR:
                 ea = ida_bytes.bin_search(
                     ea, max_ea, compiled, ida_bytes.BIN_SEARCH_FORWARD
@@ -802,8 +804,8 @@ def find(
             skipped = 0
             more = False
             try:
-                ea = ida_ida.inf_get_min_ea()
-                max_ea = ida_ida.inf_get_max_ea()
+                ea = compat.inf_get_min_ea()
+                max_ea = compat.inf_get_max_ea()
                 mask = b"\xFF" * len(pattern_bytes)
                 flags = ida_bytes.BIN_SEARCH_FORWARD | ida_bytes.BIN_SEARCH_NOSHOW
                 while ea != idaapi.BADADDR:

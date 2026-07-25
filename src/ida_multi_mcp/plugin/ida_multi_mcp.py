@@ -85,6 +85,22 @@ class IdaMultiMcpPlugin(idaapi.plugin_t):
         else:
             print("[ida-multi-mcp] Plugin loaded (headless mode, server managed externally)")
 
+        # IDA 9.0 SP0 (build 240925) dropped Python API methods that 8.5 added
+        # and 9.0 SP1 restored. Say so here rather than letting individual tools
+        # fail with an opaque AttributeError halfway through a call.
+        try:
+            from ida_multi_mcp.ida_mcp import compat
+
+            missing = compat.missing_required_apis()
+            if missing:
+                print(
+                    f"[ida-multi-mcp] WARNING: IDA {idaapi.get_kernel_version()} is missing "
+                    f"{', '.join(missing)}. Some tools will fail. "
+                    f"If this is IDA 9.0, upgrade to 9.0 SP1 (build 241217) or later."
+                )
+        except Exception:
+            pass  # never block plugin load on the version probe itself
+
         # Install hooks for database lifecycle events
         self.idb_hooks = IdbHooks(self)
         self.ui_hooks = UiHooks(self)

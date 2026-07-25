@@ -9,6 +9,8 @@ import ida_ida
 import idaapi
 import idc
 
+from . import compat
+
 from .rpc import tool
 from .sync import idasync, ida_major
 from .utils import (
@@ -162,7 +164,6 @@ def read_struct(queries: list[StructRead] | StructRead) -> list[dict]:
                 member_addr = addr + offset
                 try:
                     if member.type.is_ptr():
-                        from . import compat
                         is_64bit = compat.inf_is_64bit()
                         ptr_size = 8 if is_64bit else 4
                         value = read_int_bss_safe(member_addr, ptr_size)
@@ -214,7 +215,7 @@ def search_structs(
 ) -> list[dict]:
     """Search structs"""
     results = []
-    limit = ida_typeinf.get_ordinal_limit()
+    limit = compat.get_ordinal_limit()
 
     for ordinal in range(1, limit):
         tif = ida_typeinf.tinfo_t()
@@ -353,7 +354,7 @@ def set_type(edits: list[TypeEdit] | TypeEdit) -> list[dict]:
                     results.append({"edit": edit, "error": "No frame"})
                     continue
 
-                idx, udm = frame_tif.get_udm(edit["name"])
+                idx, udm = compat.tinfo_get_udm(frame_tif, edit["name"])
                 if not udm:
                     results.append({"edit": edit, "error": f"{edit['name']} not found"})
                     continue
@@ -396,8 +397,9 @@ def infer_types(
             ea = parse_address(addr)
             tif = ida_typeinf.tinfo_t()
 
-            # Try Hex-Rays inference
-            if ida_hexrays.init_hexrays_plugin() and ida_hexrays.guess_tinfo(tif, ea):
+            # Try type inference. guess_tinfo moved from ida_hexrays to
+            # ida_typeinf; compat prefers the modern location and falls back.
+            if compat.guess_tinfo(tif, ea):
                 results.append(
                     {
                         "addr": addr,
