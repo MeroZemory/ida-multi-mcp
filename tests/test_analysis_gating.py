@@ -85,6 +85,56 @@ def test_malformed_probe_response_stays_silent(srv):
     assert srv._analysis_incomplete("z9z9") is False
 
 
+def _call_tool(srv, name, ida_response, incomplete, max_output=None):
+    """Drive custom_tools_call with a canned IDA response."""
+    srv.registry.get_active = MagicMock(return_value={"k7m2": {}})
+    srv.router.route_request.return_value = ida_response
+    srv._analysis_state_cache["k7m2"] = (incomplete, float("inf"))
+    args = {"instance_id": "k7m2"}
+    if max_output is not None:
+        args["max_output_chars"] = max_output
+    return srv.server.registry.methods["tools/call"](name=name, arguments=args)
+
+
+def _has_warning(result):
+    return any("auto-analysis has NOT finished" in c.get("text", "")
+               for c in result.get("content", []))
+
+
+def test_warning_is_attached_to_a_normal_result(srv):
+    out = _call_tool(srv, "list_funcs", {"structuredContent": {"fns": [1, 2]}}, incomplete=True)
+    assert _has_warning(out)
+
+
+def test_warning_survives_truncation(srv):
+    """The regression: the truncation branch rebuilt content from scratch.
+
+    A big, still-analysing binary always takes that branch, so the warning was
+    dropped in exactly the case it exists for. Caught live on a 23MB DLL with
+    61k functions, where list_funcs came back with no warning attached.
+    """
+    big = {"structuredContent": {"fns": [{"addr": i, "name": f"sub_{i}"} for i in range(4000)]}}
+    out = _call_tool(srv, "list_funcs", big, incomplete=True, max_output=500)
+    assert "TRUNCATED" in out["content"][0]["text"], "expected the truncation path"
+    assert _has_warning(out), "warning was dropped by the truncation branch"
+
+
+def test_warning_is_attached_to_error_results(srv):
+    out = _call_tool(srv, "list_funcs",
+                     {"structuredContent": {"x": 1}, "isError": True}, incomplete=True)
+    assert _has_warning(out)
+
+
+def test_no_warning_once_analysis_is_finished(srv):
+    out = _call_tool(srv, "list_funcs", {"structuredContent": {"fns": []}}, incomplete=False)
+    assert not _has_warning(out)
+
+
+def test_no_warning_for_insensitive_tools(srv):
+    out = _call_tool(srv, "int_convert", {"structuredContent": {"v": 1}}, incomplete=True)
+    assert not _has_warning(out)
+
+
 def test_sensitive_set_covers_the_discovery_tools():
     """These are what an agent reaches for first on a new binary."""
     for name in ("list_funcs", "survey_binary", "func_query", "xrefs_to",

@@ -372,10 +372,15 @@ class IdaMultiMcpServer:
                 # description telling the caller to gate on analysis_wait() only
                 # helps if they read it first, so say it again here, attached to
                 # the incomplete answer itself.
+                #
+                # Appended to every return path below, not once here: the
+                # truncation branch builds a fresh content list, and that branch
+                # is the one a big half-analysed binary always takes.
+                analysis_note: list[dict] = []
                 if name in _ANALYSIS_SENSITIVE_TOOLS and self._analysis_incomplete(
                     arguments.get("instance_id")
                 ):
-                    content = list(content) + [{
+                    analysis_note = [{
                         "type": "text",
                         "text": (
                             "\n[ida-multi-mcp] WARNING: IDA auto-analysis has NOT finished on "
@@ -390,7 +395,7 @@ class IdaMultiMcpServer:
                 # Even on errors, keep the structured payload if present.
                 if is_error:
                     return {
-                        "content": content,
+                        "content": list(content) + analysis_note,
                         **({"structuredContent": structured} if structured is not None else {}),
                         "isError": True,
                     }
@@ -417,13 +422,15 @@ class IdaMultiMcpServer:
                     )
 
                     return {
-                        "content": [{"type": "text", "text": preview_text[:max_output] + truncation_notice}],
+                        "content": [
+                            {"type": "text", "text": preview_text[:max_output] + truncation_notice}
+                        ] + analysis_note,
                         "structuredContent": preview_structured,
                         "isError": False,
                     }
 
                 return {
-                    "content": content,
+                    "content": list(content) + analysis_note,
                     "structuredContent": structured,
                     "isError": False,
                 }
