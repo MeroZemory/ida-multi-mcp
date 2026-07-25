@@ -6,6 +6,7 @@
 # transport-specific — this copy logs to stderr (stdout is the stdio protocol
 # channel), whereas the HTTP copy logs to stdout. Keep shared, transport-neutral
 # fixes mirrored across both copies.
+import os
 import re
 import sys
 import time
@@ -14,6 +15,7 @@ import json
 import inspect
 import threading
 import traceback
+from concurrent.futures import ThreadPoolExecutor, wait as futures_wait
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer, HTTPServer
 from typing import Any, Callable, Union, Annotated, BinaryIO, NotRequired, get_origin, get_args, get_type_hints, is_typeddict
 from types import UnionType
@@ -430,36 +432,135 @@ class McpServer:
         print("[MCP] Server stopped", file=sys.stderr)
 
     _STDIO_MAX_LINE = 10 * 1024 * 1024  # 10MB max per line
+    # How long stdio shutdown waits for already-running calls to write a reply.
+    _STDIO_SHUTDOWN_GRACE_SEC = 5.0
 
-    def stdio(self, stdin: BinaryIO | None = None, stdout: BinaryIO | None = None):
+    def stdio(
+        self,
+        stdin: BinaryIO | None = None,
+        stdout: BinaryIO | None = None,
+        max_workers: int | None = None,
+    ):
+        """Serve MCP over stdio, dispatching requests concurrently.
+
+        Requests are handed to a bounded worker pool instead of being handled
+        inline. Dispatching inline made the router a global bottleneck: a tool
+        call to one IDA instance blocked every other instance's calls behind it
+        for as long as the router's HTTP timeout, even though the instances are
+        separate processes that can serve in parallel.
+
+        Two things stay on the reader thread:
+
+        - Notifications, so ``notifications/cancelled`` can reach an in-flight
+          request instead of queueing behind the very work it is cancelling.
+          Inline dispatch made cancellation unreachable in practice.
+        - ``initialize`` and ``ping``, which are cheap and ordering-sensitive.
+
+        JSON-RPC responses are correlated by id, so out-of-order replies are
+        valid. Only the stdout writes need serializing, which the write lock
+        does; the framing (one JSON object per line) stays intact because each
+        response is encoded and written as a single locked operation.
+        """
         stdin = stdin or sys.stdin.buffer
         stdout = stdout or sys.stdout.buffer
-        while True:
+
+        if max_workers is None:
+            max_workers = self._stdio_max_workers()
+
+        write_lock = threading.Lock()
+
+        def emit(response) -> None:
+            if response is None:
+                return
+            payload = json.dumps(response).encode("utf-8") + b"\n"
+            with write_lock:
+                stdout.write(payload)
+                stdout.flush()
+
+        def handle(request: bytes) -> None:
             try:
-                request = stdin.readline(self._STDIO_MAX_LINE + 1)
-                if not request: # EOF
+                emit(self.registry.dispatch(request))
+            except (BrokenPipeError, OSError):
+                pass  # client went away mid-write; the reader loop will notice EOF
+            except Exception as e:
+                # dispatch() maps exceptions itself, so reaching here means the
+                # failure was in emit/JSON encoding. Never let it kill a worker
+                # silently — the client would wait forever for this id.
+                print(f"[MCP] stdio worker error: {e!r}", file=sys.stderr)
+
+        def runs_inline(request: bytes) -> bool:
+            try:
+                obj = json.loads(request)
+            except Exception:
+                return True  # malformed: dispatch() owns the parse-error reply
+            if not isinstance(obj, dict):
+                return True
+            if "id" not in obj:
+                return True  # notification, including notifications/cancelled
+            return obj.get("method") in ("initialize", "ping")
+
+        executor = ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="mcp-stdio"
+        )
+        inflight: set = set()
+        inflight_lock = threading.Lock()
+
+        def submit(request: bytes) -> None:
+            future = executor.submit(handle, request)
+            with inflight_lock:
+                inflight.add(future)
+            future.add_done_callback(lambda f: inflight.discard(f))
+
+        try:
+            while True:
+                try:
+                    request = stdin.readline(self._STDIO_MAX_LINE + 1)
+                    if not request: # EOF
+                        break
+
+                    # Strip whitespace (trailing newline) before parsing
+                    request = request.strip()
+                    if not request:
+                        continue
+
+                    # Security: reject oversized lines. Reply with an error rather
+                    # than silently dropping, so the client does not hang waiting.
+                    if len(request) > self._STDIO_MAX_LINE:
+                        emit(self.registry._error(None, -32600, "Request too large"))
+                        continue
+
+                    if runs_inline(request):
+                        handle(request)
+                    else:
+                        submit(request)
+                except (BrokenPipeError, KeyboardInterrupt): # Client disconnected
                     break
+        finally:
+            # Drop work that has not started — nobody is waiting on it now — but
+            # give already-running calls a bounded window to write their reply.
+            # Waiting unbounded would hold shutdown for as long as a wedged IDA
+            # takes to answer.
+            with inflight_lock:
+                pending = [f for f in inflight if not f.done()]
+            executor.shutdown(wait=False, cancel_futures=True)
+            if pending:
+                futures_wait(pending, timeout=self._STDIO_SHUTDOWN_GRACE_SEC)
 
-                # Strip whitespace (trailing newline) before parsing
-                request = request.strip()
-                if not request:
-                    continue
-
-                # Security: reject oversized lines. Reply with an error rather
-                # than silently dropping, so the client does not hang waiting.
-                if len(request) > self._STDIO_MAX_LINE:
-                    response = self.registry._error(None, -32600, "Request too large")
-                    if response:
-                        stdout.write(json.dumps(response).encode("utf-8") + b"\n")
-                        stdout.flush()
-                    continue
-
-                response = self.registry.dispatch(request)
-                if response is not None:
-                    stdout.write(json.dumps(response).encode("utf-8") + b"\n")
-                    stdout.flush()
-            except (BrokenPipeError, KeyboardInterrupt): # Client disconnected
-                break
+    @staticmethod
+    def _stdio_max_workers() -> int:
+        """Concurrency cap for stdio dispatch (IDA_MCP_STDIO_WORKERS)."""
+        raw = os.environ.get("IDA_MCP_STDIO_WORKERS", "").strip()
+        if raw:
+            try:
+                value = int(raw)
+            except ValueError:
+                pass
+            else:
+                if value >= 1:
+                    return value
+        # Each in-flight call usually occupies one IDA instance, and IDA itself
+        # is single-threaded, so extra workers past a handful only add queueing.
+        return 8
 
     def cors_localhost(self, origin: str) -> bool:
         """Allow CORS requests from localhost on ANY port."""

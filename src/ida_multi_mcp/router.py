@@ -6,6 +6,7 @@ Routes MCP requests to the appropriate IDA instance with fallback verification.
 import json
 import http.client
 import os
+import threading
 import time
 from typing import Any
 
@@ -27,6 +28,7 @@ class InstanceRouter:
         """
         self.registry = registry
         self._binary_path_cache: dict[str, tuple[str | None, float]] = {}
+        self._cache_lock = threading.Lock()
         self._cache_timeout = 5.0  # seconds
 
     def route_request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -114,9 +116,14 @@ class InstanceRouter:
             normalized = os.path.basename(name.replace("\\", "/")).strip()
             return normalized.casefold() if normalized else None
 
-        # Check cache
-        if instance_id in self._binary_path_cache:
-            cached_name, cached_time = self._binary_path_cache[instance_id]
+        # Check cache. Held only around the dict access — the metadata query
+        # below is a blocking HTTP call and must not serialize other instances'
+        # requests now that dispatch runs concurrently. A racing miss just costs
+        # a duplicate query, which is harmless.
+        with self._cache_lock:
+            entry = self._binary_path_cache.get(instance_id)
+        if entry is not None:
+            cached_name, cached_time = entry
             if now - cached_time < self._cache_timeout:
                 # Benefit of doubt when the last query couldn't resolve a name.
                 if cached_name is None:
@@ -132,7 +139,8 @@ class InstanceRouter:
         current_name = _normalize_binary_name(metadata.get("module") if metadata else None)
 
         # Update cache
-        self._binary_path_cache[instance_id] = (current_name, now)
+        with self._cache_lock:
+            self._binary_path_cache[instance_id] = (current_name, now)
 
         # If we couldn't query, assume it's valid (benefit of doubt)
         if current_name is None:
