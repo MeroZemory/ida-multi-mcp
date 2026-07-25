@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -112,9 +113,11 @@ class IdaMultiMcpServer:
         # idalib lifecycle manager
         self.idalib_manager = IdalibManager(self.registry, python_executable=idalib_python)
 
-        # Tool cache
+        # Tool cache. Rebound wholesale by _refresh_tools rather than mutated,
+        # so concurrent readers on stdio worker threads always see a complete map.
         self._tool_cache: dict[str, dict] = {}
         self._cache_valid = False
+        self._refresh_lock = threading.Lock()
 
         # Set up management tools
         management.set_registry(self.registry)
@@ -531,13 +534,23 @@ class IdaMultiMcpServer:
     def _refresh_tools(self) -> int:
         """Refresh tool cache from IDA instances.
 
+        Discovery does HTTP round-trips per instance and takes real time, so the
+        new cache is built into a local dict and swapped in at the end rather
+        than mutated in place. The lock keeps two concurrent refreshes (e.g. a
+        tools/list miss racing the one idalib_open triggers) from duplicating
+        that work.
+
         Returns:
             Number of tools discovered
         """
-        self._tool_cache = {}
+        with self._refresh_lock:
+            return self._build_tool_cache()
+
+    def _build_tool_cache(self) -> int:
+        cache = {}
 
         # Add management tools
-        self._tool_cache["list_instances"] = {
+        cache["list_instances"] = {
             "name": "list_instances",
             "description": "List all registered IDA Pro instances with their metadata.",
             "inputSchema": {
@@ -572,7 +585,7 @@ class IdaMultiMcpServer:
             }
         }
 
-        self._tool_cache["refresh_tools"] = {
+        cache["refresh_tools"] = {
             "name": "refresh_tools",
             "description": "Re-discover tools from IDA Pro instances.",
             "inputSchema": {
@@ -582,7 +595,7 @@ class IdaMultiMcpServer:
             }
         }
 
-        self._tool_cache["compare_binaries"] = {
+        cache["compare_binaries"] = {
             "name": "compare_binaries",
             "description": "Compare two IDA instances by diffing their binary metadata, entrypoints, and segments. Takes two instance_id values and returns what is common vs unique to each.",
             "inputSchema": {
@@ -595,7 +608,7 @@ class IdaMultiMcpServer:
             }
         }
 
-        self._tool_cache["list_cached_outputs"] = {
+        cache["list_cached_outputs"] = {
             "name": "list_cached_outputs",
             "description": "List all cached truncated outputs with cache_id, age, size, and tool name. Use this to find cache IDs for get_cached_output.",
             "inputSchema": {
@@ -605,7 +618,7 @@ class IdaMultiMcpServer:
             }
         }
 
-        self._tool_cache["get_cached_output"] = {
+        cache["get_cached_output"] = {
             "name": "get_cached_output",
             "description": "Retrieve cached output from a previous tool call that was truncated. Use this to get additional chunks of large responses.",
             "inputSchema": {
@@ -628,7 +641,7 @@ class IdaMultiMcpServer:
             }
         }
 
-        self._tool_cache["decompile_to_file"] = {
+        cache["decompile_to_file"] = {
             "name": "decompile_to_file",
             "description": "Decompile functions and save results directly to files on disk. "
                 "IMPORTANT: Each function requires a separate IDA decompile call. "
@@ -669,13 +682,13 @@ class IdaMultiMcpServer:
 
         # Register similarity tool schemas (always available; extraction is IDA-side)
         for schema in similarity.SIMILARITY_TOOL_SCHEMAS:
-            self._tool_cache[schema["name"]] = schema.copy()
+            cache[schema["name"]] = schema.copy()
 
         # Register idalib management tool schemas (only if IDA Pro with idalib is available)
         from .idalib_manager import is_idalib_available
         if is_idalib_available():
             for schema in idalib_tools.IDALIB_TOOL_SCHEMAS:
-                self._tool_cache[schema["name"]] = schema.copy()
+                cache[schema["name"]] = schema.copy()
 
         _SINGLE_THREAD_WARNING = (
             " WARNING: IDA executes on a single main thread. "
@@ -717,7 +730,7 @@ class IdaMultiMcpServer:
                     "Avoid count=0 (all) with glob filters on large binaries."
                 )
 
-            self._tool_cache[schema["name"]] = schema
+            cache[schema["name"]] = schema
 
         # Discover IDA tools from any available instance (rediscover if needed).
         instances = self.registry.list_instances()
@@ -775,11 +788,11 @@ class IdaMultiMcpServer:
                         "Avoid count=0 (all) with glob filters on large binaries."
                     )
 
-                self._tool_cache[tool_schema["name"]] = tool_schema
+                cache[tool_schema["name"]] = tool_schema
 
         # MCP spec expects outputSchema to be an object schema.
         # Some clients validate all advertised tools; keep schemas conservative.
-        for tool_schema in self._tool_cache.values():
+        for tool_schema in cache.values():
             os = tool_schema.get("outputSchema")
             if not os:
                 tool_schema["outputSchema"] = {"type": "object"}
@@ -791,8 +804,12 @@ class IdaMultiMcpServer:
                     "required": ["result"],
                 }
 
+        # Publish in one rebind. Readers (tools/list, _coerce_structured_for_schema)
+        # run on stdio worker threads, so they must never observe a partially
+        # populated cache: they either see the whole old dict or the whole new one.
+        self._tool_cache = cache
         self._cache_valid = True
-        return len(self._tool_cache)
+        return len(cache)
 
     def _discover_ida_tools(self, instance_info: dict) -> list[dict]:
         """Discover tools from an IDA instance.
