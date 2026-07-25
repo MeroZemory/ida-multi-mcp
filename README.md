@@ -23,24 +23,17 @@ Every IDA Pro instance auto-registers on startup, so your LLM client sees all of
 
 ## Contents
 
-- [Quick Start](#quick-start)
-- [How It Works](#how-it-works)
-- [Features](#features)
-- [Requirements](#requirements)
-- [Manual Installation](#manual-installation) · [Supported MCP Clients](#supported-mcp-clients) · [Uninstallation](#uninstallation)
-- [Usage](#usage)
-- [Management Tools](#management-tools) · [Function Similarity (BCSD)](#function-similarity-bcsd)
-- [CLI Commands](#cli-commands)
-- [Architecture](#architecture) · [Instance IDs Explained](#instance-ids-explained) · [Design Decisions](#design-decisions)
-- [Performance](#performance) · [Limitations](#limitations)
-- [Troubleshooting](#troubleshooting)
-- [Acknowledgments](#acknowledgments) · [Related Projects](#related-projects)
+**Start here** — [Quick Start](#quick-start) · [How It Works](#how-it-works) · [Features](#features) · [Requirements](#requirements) · [Manual Installation](#manual-installation)
+
+**Using it** — [Usage](#usage) · [Function Similarity (BCSD)](#function-similarity-bcsd) · [Limitations](#limitations)
+
+**Reference** *(collapsed below)* — [Management Tools](#management-tools) · [CLI Commands](#cli-commands) · [Architecture](#architecture) · [Instance IDs](#instance-ids-explained) · [Design Decisions](#design-decisions) · [Performance](#performance) · [Troubleshooting](#troubleshooting) · [Uninstallation](#uninstallation)
 
 ## Quick Start
 
 **Just ask your AI agent to install it.** Copy-paste one of these prompts — it handles the Python version matching, IDA plugin placement, and MCP client registration for you.
 
-**Claude Code / AmpCode:**
+**Claude Code / Codex:**
 > Install and configure ida-multi-mcp by following the instructions here: https://raw.githubusercontent.com/MeroZemory/ida-multi-mcp/main/docs/installation.md
 
 **Cursor:**
@@ -81,7 +74,7 @@ MCP Client (Claude, Cursor, etc.)
 - 🏷️ **Smart instance tracking** — 4-character IDs (`k7m2`, `px3a`) with automatic binary-change detection
 - 🧯 **Graceful fallback** — handles binary changes, stale instances, and crashes with actionable errors
 - 🔒 **Localhost only** — loopback-bound with Host/Origin validation; no remote surface
-- 🧩 **IDA 8.5–9.3 compatible** — version shims (`compat.py`) for entry-point and `inf_*` API moves
+- 🧩 **IDA 8.5–9.3 compatible** — `compat.py` shims the APIs that moved between releases (entry points, `inf_*` accessors, type ordinals, UDM lookup, `guess_tinfo`) and warns on IDA 9.0 SP0, which shipped without several of them
 
 ## Requirements
 
@@ -212,6 +205,9 @@ For clients not auto-detected or to view the raw configuration JSON:
 ida-multi-mcp --config
 ```
 
+<details>
+<summary><b>Uninstallation — per-platform removal steps</b></summary>
+
 ## Uninstallation
 
 <details>
@@ -245,6 +241,8 @@ python -m pip uninstall -y ida-multi-mcp
 </details>
 
 After uninstalling, fully restart IDA Pro and your MCP client(s) so the removed configuration is picked up.
+
+</details>
 
 ## Usage
 
@@ -327,6 +325,9 @@ Decompile main in malware.exe (k7m2) and compare it with the entry point in drop
 Index malware.exe (k7m2) and dropper.dll (px3a), then find the function in dropper.dll most similar to sub_140001000 in malware.exe
 ```
 
+<details>
+<summary><b>Management Tools — list_instances, refresh_tools, idalib_*, similarity tools</b></summary>
+
 ## Management Tools
 
 The server provides built-in management tools:
@@ -355,13 +356,19 @@ List all managed headless idalib sessions.
 ### idalib_status(instance_id) *(IDA Pro only)*
 Health/readiness check for a specific idalib session.
 
-### Function Similarity (BCSD)
+</details>
+
+## Function Similarity (BCSD)
 Local, cross-instance binary code similarity — no cloud, no external service. Signals are name-independent (survive stripping): instruction-shingle MinHash, IDF-weighted imported-API / string / constant anchors, and CFG structure/shape, plus symbol-gated pseudocode tokens. An optional `[neural]` extra adds on-demand jTrans embeddings for anchor-less cross-compiler matches.
 
 - **`index_functions(instance_id, rebuild=False)`** — build/refresh the searchable index for a binary (content-hash keyed, persisted under `~/.ida-mcp/index/`, incremental, backgroundable).
 - **`index_status(instance_id)`** — index readiness, function count, staleness, and background progress.
 - **`similar_functions(instance_id, func, top_k=20, scope="binary"|"instances"|"all")`** — rank the most similar functions within the binary or across instances; returns a per-signal breakdown and confidence label.
 - **`compare_functions(a, b)`** — direct pairwise similarity between two functions (optionally across instances).
+
+
+<details>
+<summary><b>Instance IDs Explained — how the 4-char IDs are derived and when they change</b></summary>
 
 ## Instance IDs Explained
 
@@ -382,6 +389,11 @@ When you open a different binary in an IDA instance:
 1. Old instance expires (e.g., `k7m2` → expired)
 2. New instance registers (e.g., `b12`)
 3. If LLM tries to use old ID, you get a helpful error with the replacement ID
+
+</details>
+
+<details>
+<summary><b>CLI Commands — <code>--list</code>, <code>--install</code>, <code>--uninstall</code>, <code>--config</code></b></summary>
 
 ## CLI Commands
 
@@ -421,6 +433,11 @@ Print the MCP client configuration JSON for easy reference.
 ```bash
 ida-multi-mcp --config
 ```
+
+</details>
+
+<details>
+<summary><b>Architecture — registry layout, plugin directory, routing, health monitoring</b></summary>
 
 ## Architecture
 
@@ -471,6 +488,11 @@ When a binary change is detected:
 - Old instance ID is marked as expired
 - New instance registers with new ID
 - LLM receives helpful message with replacement ID
+
+</details>
+
+<details>
+<summary><b>Troubleshooting — plugin not loading, wrong Python, stale instances, Codex TOML</b></summary>
 
 ## Troubleshooting
 
@@ -579,6 +601,11 @@ Do not use unquoted `\\?\...` project table keys, and do not use double-quoted W
 
 </details>
 
+</details>
+
+<details>
+<summary><b>Design Decisions — the trade-offs behind the architecture</b></summary>
+
 ## Design Decisions
 
 | Decision | Rationale |
@@ -592,6 +619,11 @@ Do not use unquoted `\\?\...` project table keys, and do not use double-quoted W
 | compat.py shims | Single source for IDA 8.5–9.3 API differences |
 | Worker pool for stdio dispatch | Instances are separate processes; serializing at the router wasted that. Only stdout writes are locked (`IDA_MCP_STDIO_WORKERS`) |
 | Deadline fires IDA's `set_cancelled()` | A Python-level timeout cannot preempt a C SDK call; IDA's own cancel flag can (`IDA_MCP_CANCEL_GRACE_SEC`) |
+
+</details>
+
+<details>
+<summary><b>Performance — benchmarks on a 736K-function binary</b></summary>
 
 ## Performance
 
@@ -626,6 +658,8 @@ instance B while instance A was busy for ~3.7 s:
 
 [Full benchmark report with per-tool detail &rarr;](docs/benchmark-report.md)
 
+</details>
+
 ## Limitations
 
 - **Localhost only.** The router binds loopback and refuses non-loopback instances; remote IDA instances are not supported.
@@ -652,8 +686,6 @@ Contributions welcome! Please ensure:
 This project was inspired by and builds upon [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) by [Duncan Ogilvie (mrexodia)](https://github.com/mrexodia). The IDA tool implementations originated from ida-pro-mcp and have been absorbed into ida-multi-mcp as a bundled package, adding multi-instance orchestration and headless idalib support on top. Fixes still flow both ways — see [`docs/ida-pro-mcp/comparison.md`](docs/ida-pro-mcp/comparison.md) for what has been adopted from upstream and what has been sent back.
 
 Upstream has since grown its own multi-session story: `idalib-mcp` is now a supervisor that keeps each open database in a persistent worker process, requires an explicit `database` argument per call, and can adopt an already-running worker or GUI for the same path. The two projects have converged on explicit session routing but differ in approach — ida-multi-mcp discovers GUI instances through a shared file registry that each IDA plugin auto-registers with on startup, so no per-database endpoint configuration is needed on the client side.
-
-The installation approach (AI-agent-friendly installation guides) was influenced by [oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode) by [Yeongyu Yun (code-yeongyu)](https://github.com/code-yeongyu).
 
 ## Related Projects
 
