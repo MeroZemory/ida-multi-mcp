@@ -9,6 +9,8 @@ import ida_typeinf
 import ida_frame
 import idaapi
 
+from . import compat
+
 from .rpc import tool
 from .sync import idasync
 from .utils import (
@@ -30,7 +32,10 @@ from .utils import (
 @tool
 @idasync
 def stack_frame(addrs: Annotated[list[str] | str, "Address(es)"]) -> list[dict]:
-    """Get stack vars"""
+    """List the stack frame variables of one or more functions.
+
+    Returns each local's name, offset, size and type — the frame layout behind
+    the var_NN names in decompiler output."""
     addrs = normalize_list_input(addrs)
     results = []
 
@@ -118,7 +123,7 @@ def delete_stack(
                 )
                 continue
 
-            idx, udm = frame_tif.get_udm(var_name)
+            idx, udm = compat.tinfo_get_udm(frame_tif, var_name)
             if not udm:
                 results.append(
                     {

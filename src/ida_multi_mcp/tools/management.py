@@ -147,3 +147,115 @@ def compare_binaries(arguments: dict) -> dict:
         "entrypoints": _diff_sets(entries_a, entries_b),
         "segments": _diff_sets(segs_a, segs_b),
     }
+
+
+# Bounded above the router's per-request socket timeout so a wait can never
+# come back to the caller as a transport error instead of finished=false.
+ANALYSIS_WAIT_MAX_SEC = 600.0
+_ANALYSIS_POLL_INTERVAL_SEC = 1.0
+# How long each IDA-side driving slice may hold the main thread.
+_ANALYSIS_STEP_SEC = 5.0
+
+
+def analysis_wait(arguments: dict) -> dict:
+    """Poll an instance's analysis_status until analysis finishes or we time out.
+
+    Implemented here rather than inside IDA on purpose. The obvious version --
+    call ida_auto.auto_wait() under @idasync -- does not work:
+
+      * auto_wait() is one blocking call that runs until the queues drain. It
+        ignores any deadline we hand it, so `timeout_sec` was not enforced at
+        all; measured live, a requested 30s wait ran 261s.
+      * set_cancelled() does not reliably break it out (auto_wait's cancel path
+        expects a wait box), so a Timer cannot bound it either.
+      * Worst of all it holds IDA's main thread for the whole analysis, which
+        blocks every other caller of that instance for minutes.
+
+    Polling a cheap analysis_status instead gives a real timeout, and leaves the
+    main thread free between polls -- both for the analyser itself and for other
+    tool calls.
+    """
+    import time
+
+    instance_id = arguments.get("instance_id")
+    if not instance_id:
+        return {
+            "error": "Missing required parameter 'instance_id'.",
+            "hint": "Call list_instances() and pass instance_id explicitly.",
+        }
+
+    try:
+        requested = float(arguments.get("timeout_sec", 120.0))
+    except (TypeError, ValueError):
+        requested = 120.0
+    budget = max(0.0, min(requested, ANALYSIS_WAIT_MAX_SEC))
+
+    router = _router
+    if router is None:
+        return {"error": "Router unavailable"}
+
+    def probe(tool: str, extra: dict | None = None) -> dict:
+        args = {"instance_id": instance_id}
+        if extra:
+            args.update(extra)
+        resp = router.route_request("tools/call", {"name": tool, "arguments": args})
+        if not isinstance(resp, dict):
+            return {}
+        if "error" in resp:
+            return {"_error": resp["error"]}
+        body = resp.get("structuredContent")
+        return body if isinstance(body, dict) else {}
+
+    def status() -> dict:
+        return probe("analysis_status")
+
+    def drive(seconds: float) -> dict:
+        # Driving, not just watching: IDA's background analysis plateaus short
+        # of completion and auto_is_ok() never flips on its own.
+        return probe("analysis_step", {"max_sec": seconds})
+
+    t0 = time.monotonic()
+    first = status()
+    if "_error" in first:
+        return {"error": f"Could not reach instance '{instance_id}': {first['_error']}"}
+    if not first:
+        return {"error": f"Instance '{instance_id}' did not report analysis status."}
+
+    before = first.get("function_count", 0)
+    last = first
+    deadline = t0 + budget
+    while not last.get("finished") and time.monotonic() < deadline:
+        slice_sec = max(0.0, min(_ANALYSIS_STEP_SEC, deadline - time.monotonic()))
+        if slice_sec <= 0:
+            break
+        stepped = drive(slice_sec)
+        if stepped and "_error" not in stepped:
+            last = stepped
+        else:
+            polled = status()
+            if polled and "_error" not in polled:
+                last = polled
+            time.sleep(min(_ANALYSIS_POLL_INTERVAL_SEC, max(0.0, deadline - time.monotonic())))
+
+    finished = bool(last.get("finished"))
+    after = last.get("function_count", before)
+    return {
+        "finished": finished,
+        "waited_sec": round(time.monotonic() - t0, 2),
+        "function_count": after,
+        "functions_added": after - before,
+        "state": last.get("state", "unknown"),
+        "note": (
+            # Honest about what finished=True means. auto_is_ok() is a snapshot
+            # of "queues empty right now", not a latch: observed live returning
+            # True here and False on the very next analysis_status against the
+            # same idle instance. functions_added is the more durable signal --
+            # once it reaches 0 across successive calls, analysis has settled.
+            "Analysis queues drained. This is a snapshot rather than a "
+            "guarantee; if functions_added is 0 here and on a repeat call, "
+            "the database has settled."
+            if finished
+            else f"Waited {budget:.0f}s and analysis is still running - "
+                 f"call analysis_wait() again to continue."
+        ),
+    }

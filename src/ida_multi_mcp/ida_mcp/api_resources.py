@@ -174,7 +174,7 @@ def types_resource() -> list[dict]:
 def structs_resource() -> list[dict]:
    """Get all structures/unions"""
    structs = []
-   limit = ida_typeinf.get_ordinal_limit()
+   limit = compat.get_ordinal_limit()
    for ordinal in range(1, limit):
       tif = ida_typeinf.tinfo_t()
       if tif.get_numbered_type(None, ordinal) and tif.is_udt():

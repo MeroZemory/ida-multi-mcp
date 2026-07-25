@@ -36,7 +36,10 @@ _MAX_BATCH_SIZE = 500     # Max items in a single batch request
 @tool
 @idasync
 def get_bytes(regions: list[MemoryRead] | MemoryRead) -> list[dict]:
-    """Read bytes from memory addresses"""
+    """Read raw bytes at one or more addresses.
+
+    Reads the static IDB image, not a live process. Uninitialised BSS reads
+    back as zeroes rather than 0xFF."""
     if isinstance(regions, dict):
         regions = [regions]
 
@@ -146,7 +149,10 @@ def get_int(
 def get_string(
     addrs: Annotated[list[str] | str, "Addresses to read strings from"],
 ) -> list[dict]:
-    """Read strings from memory addresses"""
+    """Read NUL-terminated strings at one or more addresses.
+
+    Use when you have a pointer from decompiler output; to search for a string
+    by content use find(type="string") instead."""
     addrs = normalize_list_input(addrs)
     results = []
 

@@ -34,9 +34,9 @@ configuration; upstream routes through a supervisor process that owns the worker
 
 ---
 
-## HIGH Priority — Not Yet Adopted
+## HIGH Priority
 
-### 1. `sync.py`: reentrant `@idasync` deadlocks the IDA main thread
+### 1. `sync.py`: reentrant `@idasync` deadlocks the IDA main thread — ADOPTED
 
 **Upstream fix**: `85efdf8` (closes upstream #406).
 
@@ -46,8 +46,12 @@ inner call drains the LifoQueue; the outer call's `finally` then parks forever o
 `Queue.get()` against an empty queue. IDA's main thread freezes and every subsequent tool
 call piles up in `execute_sync` and never returns.
 
-**Current state**: `src/ida_multi_mcp/ida_mcp/sync.py:65` and `:75` still use blocking
-`get()`. Upstream's fix is a two-line change to `get_nowait()` with `queue.Empty` handling.
+**Status**: ported in PR #26. Both sites use `get_nowait()` with `queue.Empty` handling.
+We went one step further than upstream: the non-empty-call-stack guard raised `IDASyncError`
+from inside the `execute_sync` callback, where IDA swallows it, leaving the requesting thread
+blocked forever on `res_container.get()`. That error is now delivered through
+`res_container`. Sent back upstream as
+[mrexodia/ida-pro-mcp#489](https://github.com/mrexodia/ida-pro-mcp/pull/489).
 
 ### 2. `sync.py`: no native cancellation — ADOPTED
 
@@ -70,7 +74,7 @@ unconditionally in the `finally`. `find` and `find_bytes` gained the
 `cursor.cancelled` marker so callers can tell "we stopped early" from "end of page".
 Upstream's `search_text` changes do not apply — we have no such tool.
 
-### 3. `sync.py`: `idc.batch()` is called from the requesting thread, not the IDA main thread
+### 3. `sync.py`: `idc.batch()` called off the IDA main thread — ADOPTED
 
 **Upstream fix**: part of `f0cd877`.
 
@@ -79,10 +83,11 @@ worker thread, and restores it in a `finally` that also runs off-thread. Upstrea
 into `runned()` so they execute on the IDA main thread, and added `get_pre_call_batch()` so
 tools restore the caller's real prior state instead of a hard-coded default.
 
-**Current state**: `src/ida_multi_mcp/ida_mcp/sync.py:97` and `:126` still call `idc.batch()`
-off the main thread.
+**Status**: ported in PR #26 — `idc.batch()` now runs inside `runned()`, on the IDA main
+thread. Upstream's `get_pre_call_batch()` is not ported: it exists for their `keep_batch`
+debugger tools, which we do not have.
 
-### 4. IDA 8.5+ APIs used without version guards
+### 4. IDA 8.5+ APIs used without version guards — ADOPTED
 
 **Upstream fix**: `f212140`, `7cca988`, `dd4e730`, plus `compat.py`'s `tinfo_get_udm()`,
 `inf_get_*()`, `get_ordinal_limit()`, `get_func_name()`, `get_func_prototype()`.
@@ -101,14 +106,22 @@ sites bypass it and will raise on older or early builds:
 Upstream additionally *rejects* IDA 9.0 SP0 (build 240925) at import time with an explicit
 error listing the missing methods, rather than failing deep inside a tool.
 
-**Current state**: README now documents an 8.5+ floor and the 9.0 SP0 exclusion. Adding the
-`compat.py` wrappers would restore the original 8.3+ claim.
+**Status**: ported in PR #30. `inf_get_*`, `get_ordinal_limit` and `tinfo_t.get_udm` now go
+through `compat`, which dispatches on `hasattr` rather than a parsed version so a surprising
+`get_kernel_version()` string cannot route a modern IDA down the legacy path.
+`missing_required_apis()` reports what 9.0 SP0 dropped and the plugin warns at load.
+
+This also fixed a live bug: `infer_types` called `ida_hexrays.guess_tinfo`, which moved to
+`ida_typeinf`, so it failed on every call on IDA 9.x.
+
+The README still says 8.5+ — the hard blockers are gone, but the 8.3/8.4 branches have only
+been exercised against stubs, never a real old IDA.
 
 ---
 
 ## MEDIUM Priority — Not Yet Adopted
 
-### 5. `idb_save` uses save-as semantics in the GUI
+### 5. `idb_save` uses save-as semantics in the GUI — ADOPTED
 
 **Upstream fix**: `6673de9` (closes upstream #446).
 
@@ -116,7 +129,11 @@ Upstream's bug was packing with `DBFL_KILL|DBFL_COMP`, deleting the loose `.id0/
 .nam/.til` files the GUI is actively using. We pass `flags=0`, so we do **not** have the
 corruption bug — but we always pass an explicit `save_path` (`api_core.py:661`), which is a
 save-as rather than IDA's native in-place save. Upstream branches on `ida_kernwin.is_idaq()`
-and uses `save_database(None, 0)` in the GUI. Worth mirroring; we already detect `is_idaq`.
+and uses `save_database(None, 0)` in the GUI.
+
+**Status**: ported in PR #30. GUI in-place save via `save_database(None, 0)`, a compressed
+copy only for an explicit different destination, and `DBFL_KILL|DBFL_COMP` packing only when
+headless. The result reports which mode it took.
 
 ### 6. Bounded HTTP session registry
 
@@ -161,6 +178,8 @@ return actionable messages instead of bare failures. Applies to our `api_analysi
 | Headless detection via `is_idaq()` | PR #15 |
 | Reentrancy `get_nowait()` + batch on the IDA main thread (`85efdf8`, `f0cd877`) | PR #26 |
 | Native cancellation at the tool deadline (`55533c4`) | PR #28 |
+| compat wrappers for moved APIs (`f212140`, `7cca988`) | PR #30 |
+| GUI-safe `idb_save` (`6673de9`) | PR #30 |
 | Tool parameter consistency (PR #362 upstream) | Names already match |
 | HTTP Host/Origin validation | `http.py`; CORS fallback hardened in PR #17 |
 | `@unsafe` gating in idalib | `is_idalib_available()` + worker `--unsafe` |
@@ -192,9 +211,17 @@ return actionable messages instead of bare failures. Applies to our `api_analysi
 
 | # | Item | Upstream commit | Priority | Effort |
 |---|---|---|---|---|
-| ~~1~~ | ~~`set_cancelled()` at tool deadline~~ — adopted | `55533c4` | HIGH | M |
-| ~~2~~ | ~~`get_nowait()` in `call_stack` cleanup~~ — adopted | `85efdf8` | HIGH | S |
-| ~~3~~ | ~~Move `idc.batch()` onto the IDA main thread~~ — adopted | `f0cd877` | HIGH | S |
-| 4 | `compat.py` guards for 8.4/8.5/9.0-SP0 APIs | `f212140`, `7cca988` | HIGH | M |
-| 5 | `idb_save` native in-place save in GUI | `6673de9` | MED | S |
+| ~~1~~ | ~~`set_cancelled()` at tool deadline~~ — adopted (#28) | `55533c4` | HIGH | M |
+| ~~2~~ | ~~`get_nowait()` in `call_stack` cleanup~~ — adopted (#26) | `85efdf8` | HIGH | S |
+| ~~3~~ | ~~Move `idc.batch()` onto the IDA main thread~~ — adopted (#26) | `f0cd877` | HIGH | S |
+| ~~4~~ | ~~`compat.py` guards for 8.4/8.5/9.0-SP0 APIs~~ — adopted (#30) | `f212140`, `7cca988` | HIGH | M |
+| ~~5~~ | ~~`idb_save` native in-place save in GUI~~ — adopted (#30) | `6673de9` | MED | S |
 | 6 | Richer error reporting on rename/xrefs/decompile/set_type | `c395db9` | MED | M |
+
+---
+
+## Contributed back upstream
+
+| Change | Upstream PR |
+|---|---|
+| `_sync_wrapper` guard raised into `execute_sync`, leaving the caller blocked forever on `res_container.get()` — a reachable path into upstream #217 | [mrexodia/ida-pro-mcp#489](https://github.com/mrexodia/ida-pro-mcp/pull/489) |

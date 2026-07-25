@@ -28,6 +28,8 @@ import idaapi
 import idautils
 import idc
 
+from . import compat
+
 from .sync import IDAError
 
 # ============================================================================
@@ -431,8 +433,8 @@ def get_image_size() -> int:
     except AttributeError:
         import ida_ida
 
-        omin_ea = ida_ida.inf_get_omin_ea()
-        omax_ea = ida_ida.inf_get_omax_ea()
+        omin_ea = compat.inf_get_omin_ea()
+        omax_ea = compat.inf_get_omax_ea()
     image_size = omax_ea - omin_ea
     header = idautils.peutils_t().header()
     if header and header[:4] == b"PE\0\0":
@@ -1246,7 +1248,7 @@ def handle_large_output(result: Any, line_threshold: int = 3000) -> Any:
                 suffix=".json", prefix="ida_mcp_", text=True
             )
             try:
-                with os.fdopen(fd, "w") as f:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(serialized)
 
                 return {

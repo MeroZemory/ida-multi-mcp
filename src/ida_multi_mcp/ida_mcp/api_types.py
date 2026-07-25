@@ -9,6 +9,8 @@ import ida_ida
 import idaapi
 import idc
 
+from . import compat
+
 from .rpc import tool
 from .sync import idasync, ida_major
 from .utils import (
@@ -37,7 +39,10 @@ from .utils import (
 def declare_type(
     decls: Annotated[list[str] | str, "C type declarations"],
 ) -> list[dict]:
-    """Declare types"""
+    """Declare C types (structs, unions, enums, typedefs) into the IDB.
+
+    Takes ordinary C declaration text. Declare a type here first, then apply it
+    to an address with set_type."""
     decls = normalize_list_input(decls)
     results = []
 
@@ -162,7 +167,6 @@ def read_struct(queries: list[StructRead] | StructRead) -> list[dict]:
                 member_addr = addr + offset
                 try:
                     if member.type.is_ptr():
-                        from . import compat
                         is_64bit = compat.inf_is_64bit()
                         ptr_size = 8 if is_64bit else 4
                         value = read_int_bss_safe(member_addr, ptr_size)
@@ -212,9 +216,12 @@ def search_structs(
         str, "Case-insensitive substring to search for in structure names"
     ],
 ) -> list[dict]:
-    """Search structs"""
+    """Find structures whose name contains a substring (case-insensitive).
+
+    Returns name, size and field count. Use read_struct to see the fields or to
+    overlay the struct on an address."""
     results = []
-    limit = ida_typeinf.get_ordinal_limit()
+    limit = compat.get_ordinal_limit()
 
     for ordinal in range(1, limit):
         tif = ida_typeinf.tinfo_t()
@@ -353,7 +360,7 @@ def set_type(edits: list[TypeEdit] | TypeEdit) -> list[dict]:
                     results.append({"edit": edit, "error": "No frame"})
                     continue
 
-                idx, udm = frame_tif.get_udm(edit["name"])
+                idx, udm = compat.tinfo_get_udm(frame_tif, edit["name"])
                 if not udm:
                     results.append({"edit": edit, "error": f"{edit['name']} not found"})
                     continue
@@ -387,7 +394,10 @@ def set_type(edits: list[TypeEdit] | TypeEdit) -> list[dict]:
 def infer_types(
     addrs: Annotated[list[str] | str, "Addresses to infer types for"],
 ) -> list[dict]:
-    """Infer types"""
+    """Infer the type of data or a function at an address.
+
+    Asks Hex-Rays first and falls back to IDA's own guess. Returns the inferred
+    type plus a confidence label; a null type means neither could decide."""
     addrs = normalize_list_input(addrs)
     results = []
 
@@ -396,8 +406,9 @@ def infer_types(
             ea = parse_address(addr)
             tif = ida_typeinf.tinfo_t()
 
-            # Try Hex-Rays inference
-            if ida_hexrays.init_hexrays_plugin() and ida_hexrays.guess_tinfo(tif, ea):
+            # Try type inference. guess_tinfo moved from ida_hexrays to
+            # ida_typeinf; compat prefers the modern location and falls back.
+            if compat.guess_tinfo(tif, ea):
                 results.append(
                     {
                         "addr": addr,
