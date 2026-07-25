@@ -1,6 +1,7 @@
 """Core API Functions - IDB metadata and basic queries"""
 
 import re
+import threading
 import time
 from typing import Annotated, Optional
 
@@ -555,17 +556,25 @@ def analysis_status() -> dict:
     }
 
 
+# Hard ceiling on analysis_wait. The router gives an IDA call 300s before it
+# gives up on the socket, so a wait allowed to run longer than this comes back
+# to the caller as a transport error instead of a clean finished=false.
+_ANALYSIS_WAIT_MAX_SEC = 240.0
+
+
 @tool
 @idasync
-@tool_timeout(300.0)
+@tool_timeout(_ANALYSIS_WAIT_MAX_SEC + 30.0)
 def analysis_wait(
-    timeout_sec: Annotated[float, "Seconds to wait before returning (default 120)"] = 120.0,
+    timeout_sec: Annotated[
+        float, "Seconds to wait before returning (default 120, max 240)"
+    ] = 120.0,
 ) -> dict:
     """Block until IDA's auto-analysis finishes, then return.
 
     Call this once after opening a binary, before any analysis work. If it
     returns finished=false the wait timed out rather than failed — call it
-    again to keep waiting.
+    again to keep waiting. Large binaries routinely need several calls.
 
     Returns the elapsed wait and the resulting function count, so a caller can
     see analysis actually progressing across successive calls."""
@@ -581,14 +590,28 @@ def analysis_wait(
             "note": "Analysis had already finished.",
         }
 
-    deadline = time.monotonic() + max(0.0, float(timeout_sec))
-    # auto_wait() processes the queues and returns False if it was cancelled —
-    # which is exactly what the tool deadline's set_cancelled() does. Loop so a
-    # cancelled slice resumes rather than aborting the whole wait.
-    while time.monotonic() < deadline:
-        ida_auto.auto_wait()
-        if ida_auto.auto_is_ok():
-            break
+    requested = max(0.0, float(timeout_sec))
+    budget = min(requested, _ANALYSIS_WAIT_MAX_SEC)
+
+    # auto_wait() is one blocking call that runs until the queues drain — it
+    # does not come back to let us check a deadline, so looping around it does
+    # NOT bound the wait. On a large binary that overran the router's socket
+    # timeout and surfaced as a transport error rather than finished=false.
+    #
+    # auto_wait() does poll user_cancelled(), and set_cancelled() is THREAD_SAFE,
+    # so a Timer gives us the bound. sync.py's own deadline uses the same flag
+    # but keys its grace period off its own timer, so firing it here does not
+    # confuse it; clear it afterwards either way since the flag is sticky.
+    timer = threading.Timer(budget, ida_kernwin.set_cancelled)
+    timer.daemon = True
+    timer.start()
+    try:
+        deadline = time.monotonic() + budget
+        while not ida_auto.auto_is_ok() and time.monotonic() < deadline:
+            ida_auto.auto_wait()
+    finally:
+        timer.cancel()
+        ida_kernwin.clr_cancelled()
 
     finished = bool(ida_auto.auto_is_ok())
     after = ida_funcs.get_func_qty()
@@ -601,7 +624,10 @@ def analysis_wait(
         "note": (
             "Analysis complete."
             if finished
-            else "Timed out while analysis was still running — call analysis_wait() again to continue."
+            else (
+                f"Waited {budget:.0f}s and analysis is still running — call "
+                f"analysis_wait() again to continue."
+            )
         ),
     }
 
