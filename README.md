@@ -17,6 +17,7 @@ Every IDA Pro instance auto-registers on startup, so your LLM client sees all of
 
 *Newest first.*
 
+- **⏳ Reliable auto-analysis gating** — `analysis_status()` and `analysis_wait()` let an agent tell whether IDA has actually finished analysing before it draws conclusions. `server_health`'s `auto_analysis_ready` flag was inverted, so it reported "ready" exactly when analysis was still running; on an 8.5 MB DLL, waiting properly added **3,672 functions** (9,580 → 13,252) that an unwaiting agent would never have seen. `idb_save` also no longer takes the save-as path in the GUI.
 - **⚡ Genuinely parallel instances** — the router used to dispatch one request at a time, so a slow call on one binary stalled every other binary behind it. Requests now run on a worker pool with only the stdout writes serialized. Measured against two live instances: a call to instance B while instance A was busy went from **3.41 s → 0.01 s**. ([#27](https://github.com/MeroZemory/ida-multi-mcp/pull/27))
 - **⏱️ Slow scans no longer freeze an instance** — a long C-level SDK call (`find_bytes`, `decompile`, string building) could hold IDA's main thread far past the tool timeout, because a Python-level timeout cannot preempt C. The deadline now fires IDA's own `set_cancelled()`, which those calls poll and honour; `find`/`find_bytes` report `cursor.cancelled` so a partial page is distinguishable from a finished one. ([#28](https://github.com/MeroZemory/ida-multi-mcp/pull/28))
 - **🔎 Function similarity search (BCSD)** — locate the same or similar function *within a binary or across instances* (patch diffing, library-function ID, variant hunting). Name-independent signals that survive stripping — instruction-shingle MinHash + imported-API / string / constant anchors + CFG structure/shape — with an optional on-demand **local neural** recall (jTrans embeddings) for cross-compiler twins. All local, no cloud. → [details](#function-similarity-bcsd)
@@ -256,6 +257,34 @@ After uninstalling, fully restart IDA Pro and your MCP client(s) so the removed 
    - Another instance auto-registers (e.g., `px3a`)
 
 3. Repeat for more binaries
+
+**Skipping the load dialog.** Opening a new binary normally pops IDA's "Load a new file"
+configuration dialog, which blocks before the plugin is running — nothing on the MCP side
+can dismiss it. Launch IDA in autonomous mode to accept the defaults and go straight to
+analysis:
+
+```bash
+ida -A path/to/binary.exe
+```
+
+### Wait for auto-analysis before you trust anything
+
+On a freshly opened binary IDA analyses in the background, and **function lists, xrefs and
+decompilation are incomplete until it finishes**. On an 8.5 MB DLL the function count went
+from 9,580 to 13,252 — 28% of the functions did not exist yet — over the ~37 s the analysis
+still had left to run.
+
+```
+analysis_status()               -> {"finished": false, "state": "...", "function_count": 9580}
+analysis_wait(timeout_sec=120)  -> {"finished": true, "waited_sec": 37.25, "functions_added": 3672}
+```
+
+- **`analysis_status()`** — non-blocking check. Returns `finished`, the current analysis
+  phase, and the function count so far.
+- **`analysis_wait(timeout_sec=120)`** — blocks until analysis completes. `finished: false`
+  means the wait timed out, not that it failed; call it again to keep waiting.
+
+`server_health()` also reports this as `auto_analysis_ready`.
 
 ### Headless Analysis (IDA Pro Only)
 

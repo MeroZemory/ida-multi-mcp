@@ -8,6 +8,7 @@ import ida_auto
 import ida_funcs
 import ida_hexrays
 import ida_loader
+import ida_kernwin
 import idaapi
 import idautils
 import ida_nalt
@@ -455,7 +456,10 @@ def _build_health_payload() -> dict:
         "uptime_sec": round(time.time() - _SERVER_START_TIME, 1),
         "idb_path": path,
         "module": module,
-        "auto_analysis_ready": not ida_auto.auto_is_ok(),
+        # auto_is_ok() is "are all queues empty", i.e. True once analysis has
+        # finished. This was negated, so the field reported the opposite of the
+        # truth in both directions and agents proceeded on a half-analysed IDB.
+        "auto_analysis_ready": bool(ida_auto.auto_is_ok()),
         "hexrays_ready": bool(ida_hexrays.init_hexrays_plugin()),
         "strings_cache_ready": _strings_cache is not None,
         "strings_cache_size": len(_strings_cache) if _strings_cache else 0,
@@ -469,6 +473,121 @@ def server_health() -> dict:
     uptime, IDB path, auto-analysis status, Hex-Rays availability, and
     strings cache state."""
     return _build_health_payload()
+
+
+_AUTO_STATE_NAMES = {
+    "AU_NONE": "idle",
+    "AU_UNK": "reanalysing unexplored bytes",
+    "AU_CODE": "converting to instructions",
+    "AU_WEAK": "converting to instructions (weak)",
+    "AU_PROC": "creating functions",
+    "AU_TAIL": "adding function tails",
+    "AU_FCHUNK": "finding function chunks",
+    "AU_USED": "reanalysing dependent instructions",
+    "AU_TYPE": "applying type information",
+    "AU_LIBF": "identifying library functions",
+    "AU_CHLB": "identifying library functions (delayed)",
+    "AU_FINAL": "final analysis pass",
+}
+
+
+def _auto_state_label(finished: bool) -> str:
+    """Human-readable name of whatever the autoanalyser is doing right now.
+
+    Note this runs on the IDA main thread, which is exactly what IDA borrows
+    back from the analyser to service our request — so get_auto_state() very
+    often reads AU_NONE even with work still queued. Report that as "queued"
+    rather than "idle", which would contradict finished=False.
+    """
+    if finished:
+        return "idle"
+    try:
+        state = ida_auto.get_auto_state()
+    except Exception:
+        return "unknown"
+    if state == getattr(ida_auto, "AU_NONE", 0):
+        return "queued (paused while servicing this request)"
+    for const, label in _AUTO_STATE_NAMES.items():
+        if const == "AU_NONE":
+            continue
+        value = getattr(ida_auto, const, None)
+        if value is not None and state == value:
+            return label
+    return f"running (state={state})"
+
+
+@tool
+@idasync
+def analysis_status() -> dict:
+    """Check whether IDA's initial auto-analysis has finished. Returns
+    immediately without blocking.
+
+    IMPORTANT: on a freshly opened binary, analysis runs in the background and
+    function lists, xrefs, and decompilation are INCOMPLETE until it finishes.
+    Check this before drawing conclusions from a first pass over a new binary,
+    and use analysis_wait() to block until it is done."""
+    finished = bool(ida_auto.auto_is_ok())
+    return {
+        "finished": finished,
+        "state": _auto_state_label(finished),
+        "function_count": ida_funcs.get_func_qty(),
+        "hint": (
+            "Analysis is complete; results are trustworthy."
+            if finished
+            else "Analysis is still running — call analysis_wait() before relying on results."
+        ),
+    }
+
+
+@tool
+@idasync
+@tool_timeout(300.0)
+def analysis_wait(
+    timeout_sec: Annotated[float, "Seconds to wait before returning (default 120)"] = 120.0,
+) -> dict:
+    """Block until IDA's auto-analysis finishes, then return.
+
+    Call this once after opening a binary, before any analysis work. If it
+    returns finished=false the wait timed out rather than failed — call it
+    again to keep waiting.
+
+    Returns the elapsed wait and the resulting function count, so a caller can
+    see analysis actually progressing across successive calls."""
+    t0 = time.perf_counter()
+    before = ida_funcs.get_func_qty()
+
+    if ida_auto.auto_is_ok():
+        return {
+            "finished": True,
+            "waited_sec": 0.0,
+            "function_count": before,
+            "functions_added": 0,
+            "note": "Analysis had already finished.",
+        }
+
+    deadline = time.monotonic() + max(0.0, float(timeout_sec))
+    # auto_wait() processes the queues and returns False if it was cancelled —
+    # which is exactly what the tool deadline's set_cancelled() does. Loop so a
+    # cancelled slice resumes rather than aborting the whole wait.
+    while time.monotonic() < deadline:
+        ida_auto.auto_wait()
+        if ida_auto.auto_is_ok():
+            break
+
+    finished = bool(ida_auto.auto_is_ok())
+    after = ida_funcs.get_func_qty()
+    return {
+        "finished": finished,
+        "waited_sec": round(time.perf_counter() - t0, 2),
+        "function_count": after,
+        "functions_added": after - before,
+        "state": _auto_state_label(finished),
+        "note": (
+            "Analysis complete."
+            if finished
+            else "Timed out while analysis was still running — call analysis_wait() again to continue."
+        ),
+    }
 
 
 @tool
@@ -649,17 +768,45 @@ def imports_query(
 def idb_save(
     path: Annotated[str, "Optional destination path (default: current IDB path)"] = "",
 ) -> dict:
-    """Save active IDB to disk. Call after renaming, retyping, or commenting
-    to persist changes. Optionally specify a custom output path."""
+    """Save active IDB to disk, with no dialogs. Call after renaming, retyping,
+    or commenting to persist changes. Optionally specify a custom output path
+    to write a copy instead, leaving the open database untouched."""
     try:
-        save_path = path.strip() if path else ""
-        if not save_path:
-            save_path = ida_loader.get_path(ida_loader.PATH_TYPE_IDB)
+        requested = path.strip() if path else ""
+        current = ida_loader.get_path(ida_loader.PATH_TYPE_IDB)
+        save_path = requested or current
         if not save_path:
             return {"ok": False, "path": None, "error": "Could not resolve IDB path"}
 
-        ok = bool(ida_loader.save_database(save_path, 0))
-        result: dict = {"ok": ok, "path": save_path}
+        try:
+            is_gui = bool(ida_kernwin.is_idaq())
+        except Exception:
+            is_gui = False
+
+        saving_copy = bool(requested) and requested != current
+
+        if saving_copy:
+            # Explicit different destination: write a compressed snapshot and
+            # leave the live working files alone.
+            flags = getattr(ida_loader, "DBFL_COMP", 0)
+            ok = bool(ida_loader.save_database(save_path, flags))
+        elif is_gui:
+            # In the GUI the open database is backed by loose .id0/.id1/.id2/
+            # .nam/.til files that IDA is actively using. Pass None for the
+            # in-place save IDA itself performs on Ctrl+W; handing it an
+            # explicit path takes the save-as route instead.
+            ok = bool(ida_loader.save_database(None, 0))
+        else:
+            # Headless: nothing else holds the working files, so pack into one
+            # compressed database.
+            flags = getattr(ida_loader, "DBFL_KILL", 0) | getattr(ida_loader, "DBFL_COMP", 0)
+            ok = bool(ida_loader.save_database(save_path, flags))
+
+        result: dict = {
+            "ok": ok,
+            "path": save_path,
+            "mode": "copy" if saving_copy else ("gui-in-place" if is_gui else "headless-packed"),
+        }
         if not ok:
             result["error"] = "save_database returned false"
         return result
