@@ -135,6 +135,60 @@ def test_no_warning_for_insensitive_tools(srv):
     assert not _has_warning(out)
 
 
+def test_analysis_wait_polls_until_finished(srv):
+    """Router-side wait: poll a cheap status call, do not hold IDA's main thread.
+
+    The IDA-side version called ida_auto.auto_wait() under @idasync. That is one
+    blocking call that ignores any deadline -- measured live, a requested 30s
+    wait ran 261s -- and it pins the main thread for the whole analysis.
+    """
+    from ida_multi_mcp.tools import management
+    management.set_router(srv.router)
+    seq = [
+        {"structuredContent": {"finished": False, "function_count": 100, "state": "queued"}},
+        {"structuredContent": {"finished": False, "function_count": 400, "state": "queued"}},
+        {"structuredContent": {"finished": True, "function_count": 900, "state": "idle"}},
+    ]
+    srv.router.route_request.side_effect = lambda m, p: seq.pop(0) if seq else seq_last
+    seq_last = {"structuredContent": {"finished": True, "function_count": 900, "state": "idle"}}
+    management._ANALYSIS_POLL_INTERVAL_SEC = 0.01
+    out = management.analysis_wait({"instance_id": "k7m2", "timeout_sec": 5})
+    assert out["finished"] is True
+    assert out["function_count"] == 900
+    assert out["functions_added"] == 800, "should report growth across the wait"
+
+
+def test_analysis_wait_honours_its_timeout(srv):
+    """finished=false on timeout, and it must actually return near the deadline."""
+    import time
+    from ida_multi_mcp.tools import management
+    management.set_router(srv.router)
+    management._ANALYSIS_POLL_INTERVAL_SEC = 0.05
+    srv.router.route_request.return_value = {
+        "structuredContent": {"finished": False, "function_count": 10, "state": "queued"}
+    }
+    t0 = time.monotonic()
+    out = management.analysis_wait({"instance_id": "k7m2", "timeout_sec": 0.3})
+    elapsed = time.monotonic() - t0
+    assert out["finished"] is False
+    assert elapsed < 3.0, f"timeout not honoured (took {elapsed:.1f}s)"
+    assert "call analysis_wait() again" in out["note"]
+
+
+def test_analysis_wait_requires_instance_id(srv):
+    from ida_multi_mcp.tools import management
+    management.set_router(srv.router)
+    assert "error" in management.analysis_wait({})
+
+
+def test_analysis_wait_reports_unreachable_instance(srv):
+    from ida_multi_mcp.tools import management
+    management.set_router(srv.router)
+    srv.router.route_request.return_value = {"error": "Failed to connect to instance"}
+    out = management.analysis_wait({"instance_id": "dead"})
+    assert "error" in out and "dead" in out["error"]
+
+
 def test_sensitive_set_covers_the_discovery_tools():
     """These are what an agent reaches for first on a new binary."""
     for name in ("list_funcs", "survey_binary", "func_query", "xrefs_to",

@@ -263,6 +263,14 @@ class IdaMultiMcpServer:
                         "isError": True
                     }
 
+            elif name == "analysis_wait":
+                result = management.analysis_wait(arguments)
+                return {
+                    "content": [{"type": "text", "text": _json_text(result)}],
+                    "structuredContent": result,
+                    "isError": "error" in result,
+                }
+
             elif name == "compare_binaries":
                 result = management.compare_binaries(arguments)
                 return {
@@ -694,6 +702,30 @@ class IdaMultiMcpServer:
                 "properties": {},
                 "required": []
             }
+        }
+
+        cache["analysis_wait"] = {
+            "name": "analysis_wait",
+            "description": (
+                "Block until IDA's auto-analysis finishes on an instance, then return. "
+                "CALL THIS ONCE AFTER OPENING A BINARY, BEFORE ANY ANALYSIS WORK: until it "
+                "reports finished, the function list, xrefs, strings and decompiler output "
+                "are all incomplete. If it returns finished=false the wait timed out rather "
+                "than failed - call it again to keep waiting. Returns the elapsed wait and "
+                "how many functions appeared meanwhile, so you can see analysis progressing. "
+                "Use analysis_status() for a non-blocking check."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "instance_id": {"type": "string", "description": "Target IDA instance ID (required)"},
+                    "timeout_sec": {
+                        "type": "number",
+                        "description": "Seconds to wait before returning (default 120, max 600)",
+                    },
+                },
+                "required": ["instance_id"],
+            },
         }
 
         cache["compare_binaries"] = {
