@@ -1,19 +1,40 @@
+<div align="center">
+
 # ida-multi-mcp
 
-Multi-instance IDA Pro MCP server for simultaneous reverse engineering of multiple binaries through a single MCP endpoint. Supports both GUI instances and headless analysis via idalib (IDA Pro only).
+**Reverse-engineer several binaries at once — dropper, payload, C2 — through a single MCP endpoint.**
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
-![IDA Pro](https://img.shields.io/badge/IDA%20Pro-8.5%2B-orange.svg)
-![MCP](https://img.shields.io/badge/MCP-compatible-brightgreen.svg)
+Every IDA Pro instance auto-registers on startup, so your LLM client sees all of them without touching its config. Includes local, name-independent function-similarity search across binaries.
+
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](#requirements)
+[![IDA Pro](https://img.shields.io/badge/IDA%20Pro-8.5%2B-orange.svg)](#requirements)
+[![MCP](https://img.shields.io/badge/MCP-compatible-brightgreen.svg)](#supported-mcp-clients)
+
+</div>
 
 ## ✨ What's New
 
-- **Function similarity search (BCSD)** — locate the same or similar function *within a binary or across instances* (patch diffing, library-function ID, variant hunting). Name-independent signals that survive stripping — instruction-shingle MinHash + imported-API / string / constant anchors + CFG structure/shape — with an optional on-demand **local neural** recall (jTrans embeddings) for cross-compiler twins. All local, no cloud. → [details](#function-similarity-bcsd)
+*Newest first.*
 
-## Why ida-multi-mcp?
+- **⚡ Genuinely parallel instances** — the router used to dispatch one request at a time, so a slow call on one binary stalled every other binary behind it. Requests now run on a worker pool with only the stdout writes serialized. Measured against two live instances: a call to instance B while instance A was busy went from **3.41 s → 0.01 s**. ([#27](https://github.com/MeroZemory/ida-multi-mcp/pull/27))
+- **⏱️ Slow scans no longer freeze an instance** — a long C-level SDK call (`find_bytes`, `decompile`, string building) could hold IDA's main thread far past the tool timeout, because a Python-level timeout cannot preempt C. The deadline now fires IDA's own `set_cancelled()`, which those calls poll and honour; `find`/`find_bytes` report `cursor.cancelled` so a partial page is distinguishable from a finished one. ([#28](https://github.com/MeroZemory/ida-multi-mcp/pull/28))
+- **🔎 Function similarity search (BCSD)** — locate the same or similar function *within a binary or across instances* (patch diffing, library-function ID, variant hunting). Name-independent signals that survive stripping — instruction-shingle MinHash + imported-API / string / constant anchors + CFG structure/shape — with an optional on-demand **local neural** recall (jTrans embeddings) for cross-compiler twins. All local, no cloud. → [details](#function-similarity-bcsd)
 
-Analyze multiple binaries in parallel — dropper, payload, C2 — through a single MCP connection. Each IDA Pro instance auto-registers on startup; your LLM client sees every instance without touching its config.
+## Contents
+
+- [Quick Start](#quick-start)
+- [How It Works](#how-it-works)
+- [Features](#features)
+- [Requirements](#requirements)
+- [Manual Installation](#manual-installation) · [Supported MCP Clients](#supported-mcp-clients) · [Uninstallation](#uninstallation)
+- [Usage](#usage)
+- [Management Tools](#management-tools) · [Function Similarity (BCSD)](#function-similarity-bcsd)
+- [CLI Commands](#cli-commands)
+- [Architecture](#architecture) · [Instance IDs Explained](#instance-ids-explained) · [Design Decisions](#design-decisions)
+- [Performance](#performance) · [Limitations](#limitations)
+- [Troubleshooting](#troubleshooting)
+- [Acknowledgments](#acknowledgments) · [Related Projects](#related-projects)
 
 ## Quick Start
 
@@ -50,17 +71,17 @@ MCP Client (Claude, Cursor, etc.)
 
 ## Features
 
-- **Zero-configuration instance discovery** — Each IDA Pro instance auto-registers on startup
-- **Headless analysis (IDA Pro)** — Open binaries without GUI via `idalib_open` — each session runs as an isolated subprocess
-- **Port-collision free** — Uses OS auto-assigned ports (port 0)
-- **Dynamic tool discovery** — All 80+ IDA tools available automatically
-- **1-call binary triage** — `survey_binary` returns metadata, segments, top strings/functions, imports, and call graph in one call
-- **Cross-binary analysis** — Target specific instances via `instance_id` parameter
-- **Function-similarity search** — `similar_functions` / `compare_functions` rank BCSD matches (instruction-shingle MinHash + API/string/constant anchors + CFG/shape) within a binary or across instances. Optional on-demand **neural recall** (jTrans embeddings) recovers anchor-less cross-compiler twins that lexical/structural signals miss — enable with `pip install ida-multi-mcp[neural]` + `IDA_MCP_SIM_NEURAL=1` (model auto-downloads to `~/.ida-mcp/models/`)
-- **Smart instance tracking** — 4-character IDs (k7m2, px3a, etc.) with automatic binary-change detection
-- **IDA 8.5–9.3 compatible** — Version compatibility shims (`compat.py`) for entry-point and `inf_*` API moves
-- **File-based registry** — Tracks all active instances (GUI and headless)
-- **Graceful fallback** — Handles binary changes, stale instances, and crashes
+- 🔌 **Zero-configuration discovery** — every IDA Pro instance auto-registers on startup; nothing to add to your MCP client config
+- ⚡ **Parallel across instances** — requests to different binaries are dispatched concurrently, so one slow call does not stall the rest
+- 🖥️ **Headless analysis (IDA Pro)** — open binaries without a GUI via `idalib_open`; each session is an isolated subprocess
+- 🔎 **Function-similarity search** — `similar_functions` / `compare_functions` rank BCSD matches (instruction-shingle MinHash + API/string/constant anchors + CFG/shape) within a binary or across instances. Optional **neural recall** (jTrans embeddings) recovers anchor-less cross-compiler twins that lexical/structural signals miss — `pip install ida-multi-mcp[neural]` + `IDA_MCP_SIM_NEURAL=1` (model auto-downloads to `~/.ida-mcp/models/`)
+- 🩺 **1-call binary triage** — `survey_binary` returns metadata, segments, top strings/functions, imports, and call graph in one call
+- 🔀 **Cross-binary analysis** — target any instance via the `instance_id` parameter
+- 🧰 **Dynamic tool discovery** — 90 IDA tools, no hardcoded list. 73 are exposed by default; the 16 debugger tools sit behind an `?ext=dbg` gate
+- 🏷️ **Smart instance tracking** — 4-character IDs (`k7m2`, `px3a`) with automatic binary-change detection
+- 🧯 **Graceful fallback** — handles binary changes, stale instances, and crashes with actionable errors
+- 🔒 **Localhost only** — loopback-bound with Host/Origin validation; no remote surface
+- 🧩 **IDA 8.5–9.3 compatible** — version shims (`compat.py`) for entry-point and `inf_*` API moves
 
 ## Requirements
 
@@ -248,7 +269,7 @@ Open binaries without a GUI — each session runs as an isolated subprocess:
 > Use idalib_open to analyze /path/to/malware.exe headlessly
 ```
 
-The LLM calls `idalib_open(input_path="/path/to/malware.exe")`, which spawns a headless idalib process, waits for auto-analysis, and returns an `instance_id`. From that point, all 80+ IDA tools work exactly as with a GUI instance.
+The LLM calls `idalib_open(input_path="/path/to/malware.exe")`, which spawns a headless idalib process, waits for auto-analysis, and returns an `instance_id`. From that point, every IDA tool works exactly as with a GUI instance.
 
 To specify a custom Python with `idapro` installed, start the server with:
 ```bash
@@ -289,7 +310,7 @@ Registered IDA instances (3):
 
 ### Using in Your LLM
 
-Once connected, all 80+ IDA tools are available. **All IDA tool calls require** the `instance_id` parameter to avoid cross-agent contention.
+Once connected, every IDA tool is available. Tool calls take an `instance_id` to say which binary to act on. It is **required whenever two or more instances are registered**, so concurrent agents cannot collide; with exactly one instance registered it may be omitted and that instance is selected automatically.
 
 **Analyzing a single instance:**
 ```
@@ -569,6 +590,8 @@ Do not use unquoted `\\?\...` project table keys, and do not use double-quoted W
 | Dual binary-change detection | Robust fallback if IDA hooks fail |
 | Subprocess-per-binary (idalib) | True parallelism, crash isolation, no in-process DB switching |
 | compat.py shims | Single source for IDA 8.5–9.3 API differences |
+| Worker pool for stdio dispatch | Instances are separate processes; serializing at the router wasted that. Only stdout writes are locked (`IDA_MCP_STDIO_WORKERS`) |
+| Deadline fires IDA's `set_cancelled()` | A Python-level timeout cannot preempt a C SDK call; IDA's own cancel flag can (`IDA_MCP_CANCEL_GRACE_SEC`) |
 
 ## Performance
 
@@ -594,14 +617,23 @@ Infrastructure overhead:
 - Tool call routing: <5ms (local HTTP JSON-RPC)
 - Heartbeat interval: 60 seconds (negligible overhead)
 
+**Cross-instance dispatch.** Measured against two live GUI instances, issuing a call to
+instance B while instance A was busy for ~3.7 s:
+
+| | Before ([#27](https://github.com/MeroZemory/ida-multi-mcp/pull/27)) | After |
+|---|---:|---:|
+| Response time for the call to instance B | 3.41 s | **0.01 s** |
+
 [Full benchmark report with per-tool detail &rarr;](docs/benchmark-report.md)
 
 ## Limitations
 
-- Supports 127.0.0.1 only (localhost analysis)
-- Remote IDA instances not supported in v1.0
-- Headless (idalib) mode requires **IDA Pro** — IDA Home/Free do not include `idalib.dll`
-- Resources (not tools) require manual routing in v1.0
+- **Localhost only.** The router binds loopback and refuses non-loopback instances; remote IDA instances are not supported.
+- **stdio transport only.** The router speaks stdio to the MCP client — there is no HTTP/SSE endpoint for remote or containerized clients.
+- **Headless (idalib) requires IDA Pro.** IDA Home and IDA Free do not ship `idalib`.
+- **Concurrency is *across* instances, not within one.** IDA executes on a single main thread, so two calls to the *same* instance still queue.
+- **Cancellation is not forwarded to IDA.** `notifications/cancelled` reaches the router, but the router→IDA hop is a blocking HTTP request; the per-tool deadline is what bounds a runaway call.
+- **Resources (as opposed to tools) require manual routing.**
 
 ## License
 
@@ -617,7 +649,7 @@ Contributions welcome! Please ensure:
 
 ## Acknowledgments
 
-This project was inspired by and builds upon [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) by [Duncan Ogilvie (mrexodia)](https://github.com/mrexodia). The IDA tool implementations (80+ tools) originated from ida-pro-mcp and have been absorbed into ida-multi-mcp as a bundled package, adding multi-instance orchestration and headless idalib support on top.
+This project was inspired by and builds upon [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) by [Duncan Ogilvie (mrexodia)](https://github.com/mrexodia). The IDA tool implementations originated from ida-pro-mcp and have been absorbed into ida-multi-mcp as a bundled package, adding multi-instance orchestration and headless idalib support on top. Fixes still flow both ways — see [`docs/ida-pro-mcp/comparison.md`](docs/ida-pro-mcp/comparison.md) for what has been adopted from upstream and what has been sent back.
 
 Upstream has since grown its own multi-session story: `idalib-mcp` is now a supervisor that keeps each open database in a persistent worker process, requires an explicit `database` argument per call, and can adopt an already-running worker or GUI for the same path. The two projects have converged on explicit session routing but differ in approach — ida-multi-mcp discovers GUI instances through a shared file registry that each IDA plugin auto-registers with on startup, so no per-database endpoint configuration is needed on the client side.
 
