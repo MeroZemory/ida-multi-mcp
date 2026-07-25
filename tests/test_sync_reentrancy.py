@@ -14,6 +14,7 @@ Regression coverage for two bugs:
 
 import sys
 import threading
+import time
 import types
 from unittest.mock import MagicMock
 
@@ -212,6 +213,52 @@ def test_batch_is_toggled_on_the_ida_main_thread(sync_mod):
     assert tool() == "ok"
     assert observed["during"] == 1, "batch mode was not enabled on the main thread"
     assert sync_mod._test_batch_state["value"] == 0, "batch mode was not restored"
+
+
+def test_native_cancel_fires_at_the_deadline(sync_mod):
+    """A pure-C SDK call can only be preempted via ida_kernwin.set_cancelled().
+
+    Ported from upstream ida-pro-mcp 55533c4. The setprofile hook cannot
+    interrupt a C call, so the deadline schedules set_cancelled() on a Timer;
+    SDK calls that poll user_cancelled() then bail on their own.
+    """
+    kernwin = sys.modules["ida_kernwin"]
+    kernwin.reset_mock()
+    sync_mod._DEFAULT_TOOL_TIMEOUT_SEC = 0.15
+
+    fired = threading.Event()
+    kernwin.set_cancelled.side_effect = lambda: fired.set()
+
+    @sync_mod.idasync
+    def slow_c_call():
+        # Stands in for a C SDK call: no Python bytecode executes during it,
+        # so profilefunc never runs and only the Timer can intervene.
+        fired.wait(3)
+        return "done"
+
+    assert _call_without_hanging(slow_c_call, timeout=10) == "done"
+    assert fired.is_set(), "set_cancelled() was never fired at the deadline"
+    # Sticky flag must be cleared or every later user_cancelled() returns True.
+    assert kernwin.clr_cancelled.call_count >= 2, (
+        f"clr_cancelled called {kernwin.clr_cancelled.call_count}x; "
+        "expected one at entry and one in the finally"
+    )
+
+
+def test_native_cancel_timer_is_cancelled_on_fast_calls(sync_mod):
+    """A tool finishing well inside the deadline must not fire set_cancelled."""
+    kernwin = sys.modules["ida_kernwin"]
+    kernwin.reset_mock()
+    kernwin.set_cancelled.side_effect = None
+    sync_mod._DEFAULT_TOOL_TIMEOUT_SEC = 5.0
+
+    @sync_mod.idasync
+    def quick():
+        return "fast"
+
+    assert _call_without_hanging(quick) == "fast"
+    time.sleep(0.3)
+    assert kernwin.set_cancelled.call_count == 0, "timer was not cancelled"
 
 
 def test_batch_is_restored_when_the_tool_raises(sync_mod):

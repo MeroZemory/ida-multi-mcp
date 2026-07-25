@@ -49,9 +49,9 @@ call piles up in `execute_sync` and never returns.
 **Current state**: `src/ida_multi_mcp/ida_mcp/sync.py:65` and `:75` still use blocking
 `get()`. Upstream's fix is a two-line change to `get_nowait()` with `queue.Empty` handling.
 
-### 2. `sync.py`: no native cancellation, so slow SDK calls blow past the tool timeout
+### 2. `sync.py`: no native cancellation — ADOPTED
 
-**Upstream fix**: `55533c4` (addresses upstream #235).
+**Cherry-picked from upstream `55533c4`** (addresses upstream #235).
 
 The Python-level `setprofile` timeout cannot preempt pure-C SDK calls. `ida_search.find_*`,
 `ida_bytes.find_bytes`/`bin_search`, `ida_hexrays.decompile*`, `ida_strlist.build_strlist`,
@@ -63,8 +63,12 @@ so upstream schedules a `threading.Timer(timeout, set_cancelled)`, gives the too
 window to format a partial response, then unconditionally `clr_cancelled()` in the `finally`
 (the flag is sticky — without the clear, every later `user_cancelled()` returns True forever).
 
-**Current state**: not implemented. This is the direct remedy for full-scan tools timing out
-on large binaries; it is the highest-value item in this list.
+**Status**: ported. `sync_wrapper` now clears the flag at entry, arms a
+`threading.Timer(timeout, set_cancelled)`, gives the tool a 5s grace window
+(`_NATIVE_CANCEL_GRACE_SEC`) to format a partial response, and clears the sticky flag
+unconditionally in the `finally`. `find` and `find_bytes` gained the
+`cursor.cancelled` marker so callers can tell "we stopped early" from "end of page".
+Upstream's `search_text` changes do not apply — we have no such tool.
 
 ### 3. `sync.py`: `idc.batch()` is called from the requesting thread, not the IDA main thread
 
@@ -155,6 +159,8 @@ return actionable messages instead of bare failures. Applies to our `api_analysi
 | `parse_address` symbol resolution (`idaapi.get_name_ea` fallback) | PR #12 |
 | Lazy caches for functions and globals | PR #14 |
 | Headless detection via `is_idaq()` | PR #15 |
+| Reentrancy `get_nowait()` + batch on the IDA main thread (`85efdf8`, `f0cd877`) | PR #26 |
+| Native cancellation at the tool deadline (`55533c4`) | PR #28 |
 | Tool parameter consistency (PR #362 upstream) | Names already match |
 | HTTP Host/Origin validation | `http.py`; CORS fallback hardened in PR #17 |
 | `@unsafe` gating in idalib | `is_idalib_available()` + worker `--unsafe` |
@@ -186,9 +192,9 @@ return actionable messages instead of bare failures. Applies to our `api_analysi
 
 | # | Item | Upstream commit | Priority | Effort |
 |---|---|---|---|---|
-| 1 | `set_cancelled()` at tool deadline | `55533c4` | HIGH | M |
-| 2 | `get_nowait()` in `call_stack` cleanup | `85efdf8` | HIGH | S |
-| 3 | Move `idc.batch()` onto the IDA main thread | `f0cd877` | HIGH | S |
+| ~~1~~ | ~~`set_cancelled()` at tool deadline~~ — adopted | `55533c4` | HIGH | M |
+| ~~2~~ | ~~`get_nowait()` in `call_stack` cleanup~~ — adopted | `85efdf8` | HIGH | S |
+| ~~3~~ | ~~Move `idc.batch()` onto the IDA main thread~~ — adopted | `f0cd877` | HIGH | S |
 | 4 | `compat.py` guards for 8.4/8.5/9.0-SP0 APIs | `f212140`, `7cca988` | HIGH | M |
 | 5 | `idb_save` native in-place save in GUI | `6673de9` | MED | S |
 | 6 | Richer error reporting on rename/xrefs/decompile/set_type | `c395db9` | MED | M |
