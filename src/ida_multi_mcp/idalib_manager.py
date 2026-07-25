@@ -58,7 +58,7 @@ def _resolve_ida_dir() -> str | None:
         cfg_path = os.path.join(os.path.expanduser("~"), ".idapro", "ida-config.json")
     try:
         import json
-        with open(cfg_path, "r") as f:
+        with open(cfg_path, "r", encoding="utf-8") as f:
             cfg = json.load(f)
         d = cfg.get("Paths", {}).get("ida-install-dir", "").strip()
         if d and os.path.isdir(d):

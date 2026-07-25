@@ -196,7 +196,7 @@ class InstanceRegistry:
         if cached is not None:
             return cached
         try:
-            with open(self.registry_path, "r") as f:
+            with open(self.registry_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             if not isinstance(data, dict):
                 raise ValueError("Registry root must be an object")
@@ -240,7 +240,7 @@ class InstanceRegistry:
                 suffix=".tmp",
                 dir=os.path.dirname(self.registry_path),
             )
-            with os.fdopen(temp_fd, 'w') as f:
+            with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
                 temp_fd = None  # fdopen takes ownership of fd
                 json.dump(data, f, indent=2)
 

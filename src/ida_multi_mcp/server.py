@@ -30,7 +30,7 @@ def _load_static_ida_tools() -> list[dict]:
     global _STATIC_IDA_TOOLS
     if _STATIC_IDA_TOOLS is None:
         try:
-            with open(_STATIC_IDA_TOOLS_PATH, "r") as f:
+            with open(_STATIC_IDA_TOOLS_PATH, "r", encoding="utf-8") as f:
                 _STATIC_IDA_TOOLS = json.load(f)
         except Exception as e:
             print(f"[ida-multi-mcp] Warning: failed to load static tool schemas: {e}",

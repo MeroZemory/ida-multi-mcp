@@ -45,7 +45,7 @@ def _detect_ida_dir() -> str | None:
     else:
         config_path = Path.home() / ".idapro" / "ida-config.json"
     try:
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             cfg = json.load(f)
         cfg_dir = cfg.get("Paths", {}).get("ida-install-dir", "").strip()
         if cfg_dir and os.path.isdir(cfg_dir):
@@ -1009,7 +1009,7 @@ def _configure_idalib_path():
         config_path = Path.home() / ".idapro" / "ida-config.json"
 
     try:
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             cfg = json.load(f)
         existing = cfg.get("Paths", {}).get("ida-install-dir", "").strip()
         if existing and os.path.isdir(existing):
@@ -1031,7 +1031,7 @@ def _configure_idalib_path():
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=4)
         print(f"\n  [ok] Auto-detected IDA at: {detected}")
         print(f"       Written to: {config_path}")

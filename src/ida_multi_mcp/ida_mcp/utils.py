@@ -1248,7 +1248,7 @@ def handle_large_output(result: Any, line_threshold: int = 3000) -> Any:
                 suffix=".json", prefix="ida_mcp_", text=True
             )
             try:
-                with os.fdopen(fd, "w") as f:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(serialized)
 
                 return {
