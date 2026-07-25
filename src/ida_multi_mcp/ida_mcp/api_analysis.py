@@ -8,6 +8,7 @@ import idaapi
 import idautils
 import ida_typeinf
 import ida_nalt
+import ida_kernwin
 import ida_bytes
 import ida_ida
 import ida_entry
@@ -646,12 +647,21 @@ def find_bytes(
         except Exception:
             pass
 
+        if ida_kernwin.user_cancelled():
+            # The deadline fired set_cancelled() while bin_search was running
+            # and it bailed with BADADDR. Surface partial results with a
+            # cancelled marker rather than claiming the scan finished.
+            cursor = {"next": offset + len(matches), "cancelled": True}
+        elif more:
+            cursor = {"next": offset + limit}
+        else:
+            cursor = {"done": True}
         results.append(
             {
                 "pattern": pattern,
                 "matches": matches,
                 "n": len(matches),
-                "cursor": {"next": offset + limit} if more else {"done": True},
+                "cursor": cursor,
             }
         )
     return results
@@ -820,12 +830,18 @@ def find(
             except Exception:
                 pass
 
+            if ida_kernwin.user_cancelled():
+                cursor = {"next": offset + len(matches), "cancelled": True}
+            elif more:
+                cursor = {"next": offset + limit}
+            else:
+                cursor = {"done": True}
             results.append(
                 {
                     "query": pattern_str,
                     "matches": matches,
                     "count": len(matches),
-                    "cursor": {"next": offset + limit} if more else {"done": True},
+                    "cursor": cursor,
                     "error": None,
                 }
             )
@@ -892,12 +908,18 @@ def find(
             except Exception:
                 pass
 
+            if ida_kernwin.user_cancelled():
+                cursor = {"next": offset + len(matches), "cancelled": True}
+            elif more:
+                cursor = {"next": offset + limit}
+            else:
+                cursor = {"done": True}
             results.append(
                 {
                     "query": value,
                     "matches": matches,
                     "count": len(matches),
-                    "cursor": {"next": offset + limit} if more else {"done": True},
+                    "cursor": cursor,
                     "error": None,
                 }
             )
