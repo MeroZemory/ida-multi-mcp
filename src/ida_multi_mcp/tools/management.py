@@ -153,6 +153,8 @@ def compare_binaries(arguments: dict) -> dict:
 # come back to the caller as a transport error instead of finished=false.
 ANALYSIS_WAIT_MAX_SEC = 600.0
 _ANALYSIS_POLL_INTERVAL_SEC = 1.0
+# How long each IDA-side driving slice may hold the main thread.
+_ANALYSIS_STEP_SEC = 5.0
 
 
 def analysis_wait(arguments: dict) -> dict:
@@ -192,17 +194,25 @@ def analysis_wait(arguments: dict) -> dict:
     if router is None:
         return {"error": "Router unavailable"}
 
-    def status() -> dict:
-        resp = router.route_request(
-            "tools/call",
-            {"name": "analysis_status", "arguments": {"instance_id": instance_id}},
-        )
+    def probe(tool: str, extra: dict | None = None) -> dict:
+        args = {"instance_id": instance_id}
+        if extra:
+            args.update(extra)
+        resp = router.route_request("tools/call", {"name": tool, "arguments": args})
         if not isinstance(resp, dict):
             return {}
         if "error" in resp:
             return {"_error": resp["error"]}
         body = resp.get("structuredContent")
         return body if isinstance(body, dict) else {}
+
+    def status() -> dict:
+        return probe("analysis_status")
+
+    def drive(seconds: float) -> dict:
+        # Driving, not just watching: IDA's background analysis plateaus short
+        # of completion and auto_is_ok() never flips on its own.
+        return probe("analysis_step", {"max_sec": seconds})
 
     t0 = time.monotonic()
     first = status()
@@ -215,10 +225,17 @@ def analysis_wait(arguments: dict) -> dict:
     last = first
     deadline = t0 + budget
     while not last.get("finished") and time.monotonic() < deadline:
-        time.sleep(min(_ANALYSIS_POLL_INTERVAL_SEC, max(0.0, deadline - time.monotonic())))
-        polled = status()
-        if polled and "_error" not in polled:
-            last = polled
+        slice_sec = max(0.0, min(_ANALYSIS_STEP_SEC, deadline - time.monotonic()))
+        if slice_sec <= 0:
+            break
+        stepped = drive(slice_sec)
+        if stepped and "_error" not in stepped:
+            last = stepped
+        else:
+            polled = status()
+            if polled and "_error" not in polled:
+                last = polled
+            time.sleep(min(_ANALYSIS_POLL_INTERVAL_SEC, max(0.0, deadline - time.monotonic())))
 
     finished = bool(last.get("finished"))
     after = last.get("function_count", before)
@@ -229,7 +246,14 @@ def analysis_wait(arguments: dict) -> dict:
         "functions_added": after - before,
         "state": last.get("state", "unknown"),
         "note": (
-            "Analysis complete."
+            # Honest about what finished=True means. auto_is_ok() is a snapshot
+            # of "queues empty right now", not a latch: observed live returning
+            # True here and False on the very next analysis_status against the
+            # same idle instance. functions_added is the more durable signal --
+            # once it reaches 0 across successive calls, analysis has settled.
+            "Analysis queues drained. This is a snapshot rather than a "
+            "guarantee; if functions_added is 0 here and on a repeat call, "
+            "the database has settled."
             if finished
             else f"Waited {budget:.0f}s and analysis is still running - "
                  f"call analysis_wait() again to continue."

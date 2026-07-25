@@ -17,7 +17,7 @@ Every IDA Pro instance auto-registers on startup, so your LLM client sees all of
 
 *Newest first.*
 
-- **⏳ Reliable auto-analysis gating** — `analysis_status()` and `analysis_wait()` let an agent tell whether IDA has actually finished analysing before it draws conclusions. `server_health`'s `auto_analysis_ready` flag was inverted, so it reported "ready" exactly when analysis was still running; on an 8.5 MB DLL, waiting properly added **3,672 functions** (9,580 → 13,252) that an unwaiting agent would never have seen. `idb_save` also no longer takes the save-as path in the GUI.
+- **⏳ Auto-analysis gating** — `analysis_status()` and `analysis_wait()` let an agent find out whether IDA has actually settled before it draws conclusions, and the router attaches a warning to results from analysis-dependent tools while an instance is still analysing. `server_health`'s `auto_analysis_ready` flag was **inverted**, reporting "ready" exactly when analysis was still running. Waiting properly is worth **12,885 functions** on a 23 MB DLL (61,044 → 73,929) that an unwaiting agent would never see. Note the completion flag is a snapshot rather than a latch — [why](#wait-for-auto-analysis-before-you-trust-anything). `idb_save` also no longer takes the save-as path in the GUI.
 - **⚡ Genuinely parallel instances** — the router used to dispatch one request at a time, so a slow call on one binary stalled every other binary behind it. Requests now run on a worker pool with only the stdout writes serialized. Measured against two live instances: a call to instance B while instance A was busy went from **3.41 s → 0.01 s**. ([#27](https://github.com/MeroZemory/ida-multi-mcp/pull/27))
 - **⏱️ Slow scans no longer freeze an instance** — a long C-level SDK call (`find_bytes`, `decompile`, string building) could hold IDA's main thread far past the tool timeout, because a Python-level timeout cannot preempt C. The deadline now fires IDA's own `set_cancelled()`, which those calls poll and honour; `find`/`find_bytes` report `cursor.cancelled` so a partial page is distinguishable from a finished one. ([#28](https://github.com/MeroZemory/ida-multi-mcp/pull/28))
 - **🔎 Function similarity search (BCSD)** — locate the same or similar function *within a binary or across instances* (patch diffing, library-function ID, variant hunting). Name-independent signals that survive stripping — instruction-shingle MinHash + imported-API / string / constant anchors + CFG structure/shape — with an optional on-demand **local neural** recall (jTrans embeddings) for cross-compiler twins. All local, no cloud. → [details](#function-similarity-bcsd)
@@ -230,21 +230,42 @@ ida -A path/to/binary.exe
 ### Wait for auto-analysis before you trust anything
 
 On a freshly opened binary IDA analyses in the background, and **function lists, xrefs and
-decompilation are incomplete until it finishes**. On an 8.5 MB DLL the function count went
-from 9,580 to 13,252 — 28% of the functions did not exist yet — over the ~37 s the analysis
-still had left to run.
+decompilation are incomplete until it settles**. On an 8.5 MB DLL the function count went
+from 9,580 to 13,252 — 28% of the functions did not exist yet. On a 23 MB DLL it was 12,885.
 
 ```
-analysis_status()               -> {"finished": false, "state": "...", "function_count": 9580}
-analysis_wait(timeout_sec=120)  -> {"finished": true, "waited_sec": 37.25, "functions_added": 3672}
+analysis_status()               -> {"queue_empty": false, "function_count": 61044}
+analysis_wait(timeout_sec=200)  -> {"finished": true, "functions_added": 12884}
 ```
 
-- **`analysis_status()`** — non-blocking check. Returns `finished`, the current analysis
-  phase, and the function count so far.
-- **`analysis_wait(timeout_sec=120)`** — blocks until analysis completes. `finished: false`
-  means the wait timed out, not that it failed; call it again to keep waiting.
+- **`analysis_status()`** — non-blocking snapshot: queue state, current phase, function
+  count so far.
+- **`analysis_wait(timeout_sec=120)`** — drives analysis to completion and returns.
+  `finished: false` means the wait timed out, not that it failed; call it again.
 
-`server_health()` also reports this as `auto_analysis_ready`.
+If you only do one thing, call `analysis_wait` once after opening a binary. The router also
+attaches a warning to results from analysis-dependent tools while an instance is still
+analysing, so a partial answer is not silently mistaken for a complete one.
+
+<details>
+<summary>Why "finished" is a snapshot, not a latch</summary>
+
+`finished` / `queue_empty` come from IDA's `auto_is_ok()`, which answers *"are the analysis
+queues empty right now"*. IDA re-queues work as it goes, so the flag can read `true` and then
+`false` again moments later — observed directly on a 23 MB DLL, where `analysis_wait`
+returned `finished: true` and the very next `analysis_status` reported `false` on the same
+idle instance.
+
+Read it as: **`false` means definitely not done**. `true` means nothing is queued at that
+instant. The durable signal is `functions_added` reaching 0 across successive calls.
+
+Three phases are involved, which is why this is fiddly. IDA's background analysis does the
+bulk on its own and then plateaus without ever flipping the flag; `auto_make_step()` drains
+the residual queue; and a final `auto_wait()` pass — 34.5 s on that DLL, adding zero
+functions — is the only thing that clears the queues. `analysis_wait` handles all three, in
+bounded slices, so the instance stays responsive throughout.
+
+</details>
 
 ### Headless Analysis (IDA Pro Only)
 

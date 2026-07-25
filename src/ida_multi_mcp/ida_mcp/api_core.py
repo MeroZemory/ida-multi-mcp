@@ -16,6 +16,7 @@ import ida_typeinf
 import ida_segment
 import idc
 
+from . import compat
 from .rpc import tool
 from .sync import idasync, tool_timeout
 
@@ -535,23 +536,98 @@ def _auto_state_label(finished: bool) -> str:
 @tool
 @idasync
 def analysis_status() -> dict:
-    """Check whether IDA's initial auto-analysis has finished. Returns
-    immediately without blocking.
+    """Check whether IDA's auto-analysis has work outstanding. Non-blocking.
 
-    IMPORTANT: on a freshly opened binary, analysis runs in the background and
-    function lists, xrefs, and decompilation are INCOMPLETE until it finishes.
-    Check this before drawing conclusions from a first pass over a new binary,
-    and use analysis_wait() to block until it is done."""
-    finished = bool(ida_auto.auto_is_ok())
+    On a freshly opened binary, analysis runs in the background and the function
+    list, xrefs, strings and decompiler output are all INCOMPLETE until it
+    settles. Check this before drawing conclusions from a first pass, and use
+    analysis_wait() to drive it to completion.
+
+    `queue_empty` is a SNAPSHOT, not a latch. It reports IDA's auto_is_ok() at
+    this instant — "are the analysis queues empty right now". IDA re-queues work
+    as it goes, so the value can read True and then False again moments later;
+    observed live on a 23MB DLL. Read it as:
+
+      queue_empty=False -> definitely still working, do not trust results yet
+      queue_empty=True  -> nothing queued at this instant; combine with a stable
+                           function_count across calls before treating analysis
+                           as done
+
+    `finished` is kept as an alias of `queue_empty` for compatibility and
+    carries the same caveat."""
+    queue_empty = bool(ida_auto.auto_is_ok())
     return {
-        "finished": finished,
-        "state": _auto_state_label(finished),
+        "queue_empty": queue_empty,
+        # Alias: same snapshot value, same caveat. Not a completion latch.
+        "finished": queue_empty,
+        "state": _auto_state_label(queue_empty),
         "function_count": ida_funcs.get_func_qty(),
         "hint": (
-            "Analysis is complete; results are trustworthy."
-            if finished
-            else "Analysis is still running — call analysis_wait() before relying on results."
+            "No analysis queued at this instant. This is a snapshot, not a "
+            "guarantee — confirm function_count has stopped changing before "
+            "treating the database as fully analysed."
+            if queue_empty
+            else "Analysis still has work queued — call analysis_wait() before relying on results."
         ),
+    }
+
+
+@tool
+@idasync
+@tool_timeout(300.0)
+def analysis_step(
+    max_sec: Annotated[float, "Seconds to spend driving analysis (default 5, max 30)"] = 5.0,
+) -> dict:
+    """Drive IDA's auto-analysis queue for a bounded slice, then return.
+
+    Prefer analysis_wait(), which calls this in a loop with a real timeout.
+
+    IDA's background analysis stalls short of completion: measured on a 23MB
+    DLL it climbed to 73,928 functions on its own and then sat there, never
+    flipping auto_is_ok(). Something has to drain the residual queue.
+
+    Stepping one address at a time keeps each call bounded by max_sec, so the
+    instance stays responsive through the long bulk phase. Once the range is
+    drained this makes one closing auto_wait() call, which is unbounded and is
+    the only thing that actually flips auto_is_ok() — see the comment below.
+    That final slice therefore runs past max_sec.
+    """
+    budget = max(0.0, min(float(max_sec), 30.0))
+    lo, hi = compat.inf_get_min_ea(), compat.inf_get_max_ea()
+    before = ida_funcs.get_func_qty()
+    t0 = time.perf_counter()
+    deadline = time.monotonic() + budget
+
+    steps = 0
+    drained = False
+    finalized = False
+    while time.monotonic() < deadline:
+        if ida_auto.auto_is_ok():
+            break
+        if not ida_auto.auto_make_step(lo, hi):
+            # Range drained, but auto_is_ok() can still be False: there is a
+            # closing pass that only auto_wait() performs. Measured on a 23MB
+            # DLL, stepping produced all 73,929 functions and left the flag
+            # False; one auto_wait() then took 34.5s, added zero functions, and
+            # flipped it. So the last slice runs long by design — it is the only
+            # way to reach a genuine "analysis finished".
+            drained = True
+            ida_auto.auto_wait()
+            finalized = True
+            break
+        steps += 1
+
+    finished = bool(ida_auto.auto_is_ok())
+    after = ida_funcs.get_func_qty()
+    return {
+        "finished": finished,
+        "steps": steps,
+        "drained_range": drained,
+        "finalized": finalized,
+        "elapsed_sec": round(time.perf_counter() - t0, 2),
+        "function_count": after,
+        "functions_added": after - before,
+        "state": _auto_state_label(finished),
     }
 
 

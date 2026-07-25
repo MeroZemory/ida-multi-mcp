@@ -46,11 +46,13 @@ WORKFLOW — follow this order when you start on a binary:
 
 1. `list_instances()` to see what is loaded and get each `instance_id`.
 2. `analysis_wait(instance_id=...)` BEFORE any analysis work on a newly opened
-   binary. IDA analyses in the background, and until it finishes the function
-   list, xrefs, strings and decompiler output are all INCOMPLETE. On a mid-sized
-   DLL this is routinely thousands of missing functions, not a rounding error.
-   Use `analysis_status()` for a non-blocking check. If `analysis_wait` returns
-   `finished: false` it timed out rather than failed — call it again.
+   binary. IDA analyses in the background, and until it settles the function
+   list, xrefs, strings and decompiler output are all INCOMPLETE — on a 23MB DLL
+   that was 12,885 missing functions, not a rounding error. If it returns
+   `finished: false` it timed out rather than failed, so call it again. Treat
+   `finished` as a snapshot rather than a latch: IDA re-queues work, so the flag
+   can flip back. `functions_added` reaching 0 across successive calls is the
+   durable signal. `analysis_status()` is the non-blocking check.
 3. `survey_binary(instance_id=...)` for a one-call overview before drilling in.
 
 ROUTING — pass `instance_id` on every tool call. It is required whenever two or
@@ -707,12 +709,15 @@ class IdaMultiMcpServer:
         cache["analysis_wait"] = {
             "name": "analysis_wait",
             "description": (
-                "Block until IDA's auto-analysis finishes on an instance, then return. "
-                "CALL THIS ONCE AFTER OPENING A BINARY, BEFORE ANY ANALYSIS WORK: until it "
-                "reports finished, the function list, xrefs, strings and decompiler output "
-                "are all incomplete. If it returns finished=false the wait timed out rather "
-                "than failed - call it again to keep waiting. Returns the elapsed wait and "
-                "how many functions appeared meanwhile, so you can see analysis progressing. "
+                "Drive IDA's auto-analysis to completion on an instance, then return. "
+                "CALL THIS ONCE AFTER OPENING A BINARY, BEFORE ANY ANALYSIS WORK: until "
+                "analysis settles, the function list, xrefs, strings and decompiler output "
+                "are all incomplete - on a 23MB DLL that was 12,885 functions missing. "
+                "If it returns finished=false the wait timed out rather than failed - call "
+                "it again to keep waiting. NOTE finished reflects IDA's instantaneous "
+                "'queues empty' flag, not a permanent latch, so it can read true and then "
+                "false again; functions_added reaching 0 across successive calls is the "
+                "more durable signal that analysis has settled. "
                 "Use analysis_status() for a non-blocking check."
             ),
             "inputSchema": {

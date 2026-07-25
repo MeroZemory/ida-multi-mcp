@@ -189,6 +189,37 @@ def test_analysis_wait_reports_unreachable_instance(srv):
     assert "error" in out and "dead" in out["error"]
 
 
+def test_wait_result_does_not_oversell_completion(srv):
+    """finished=True must not be presented as a guarantee.
+
+    auto_is_ok() is a snapshot of "queues empty right now", not a latch --
+    observed live returning True from analysis_wait and False on the very next
+    analysis_status against the same idle instance. The note has to say so, or
+    a caller will treat one True as proof and stop checking.
+    """
+    from ida_multi_mcp.tools import management
+    management.set_router(srv.router)
+    srv.router.route_request.return_value = {
+        "structuredContent": {"finished": True, "function_count": 5, "state": "idle"}
+    }
+    out = management.analysis_wait({"instance_id": "k7m2"})
+    assert out["finished"] is True
+    note = out["note"].lower()
+    assert "snapshot" in note and "guarantee" in note
+    assert "functions_added" in out
+
+
+def test_analysis_wait_description_flags_the_snapshot_caveat():
+    from ida_multi_mcp.server import IdaMultiMcpServer  # noqa: F401
+    import inspect
+    from ida_multi_mcp import server as server_mod
+    src = inspect.getsource(server_mod)
+    i = src.index('cache["analysis_wait"]')
+    desc = src[i:i + 1600]
+    assert "snapshot" in desc or "not a permanent latch" in desc
+    assert "functions_added" in desc
+
+
 def test_sensitive_set_covers_the_discovery_tools():
     """These are what an agent reaches for first on a new binary."""
     for name in ("list_funcs", "survey_binary", "func_query", "xrefs_to",
