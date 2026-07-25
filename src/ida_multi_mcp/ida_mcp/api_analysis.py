@@ -166,7 +166,11 @@ def _resolve_immediate_insn_start(
 def decompile(
     addr: Annotated[str, "Function address to decompile"],
 ) -> dict:
-    """Decompile function to pseudocode"""
+    """Decompile one function to Hex-Rays pseudocode.
+
+    The single most useful tool for understanding behaviour. Requires the
+    Hex-Rays decompiler. For many functions at once use decompile_to_file —
+    decompiling in a loop blocks the instance for every other caller."""
     try:
         start = parse_address(addr)
         code = decompile_function_safe(start)
@@ -1171,7 +1175,10 @@ def export_funcs(
         str, "Export format: json (default), c_header, or prototypes"
     ] = "json",
 ) -> dict:
-    """Export function data in various formats"""
+    """Export function data (addresses, names, sizes, prototypes) in bulk.
+
+    Prefer this over looping a per-function tool — one call instead of N round
+    trips against a single-threaded IDA instance."""
     addrs = normalize_list_input(addrs)
     results = []
 

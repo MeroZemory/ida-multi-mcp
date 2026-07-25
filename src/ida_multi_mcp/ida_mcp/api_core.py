@@ -198,7 +198,10 @@ def _parse_func_query(query: str) -> int:
 def lookup_funcs(
     queries: Annotated[list[str] | str, "Address(es) or name(s)"],
 ) -> list[dict]:
-    """Get functions by address or name (auto-detects)"""
+    """Resolve functions by address or by name; the form is auto-detected.
+
+    Accepts 0x-prefixed addresses, sub_XXXX names, or real symbol names. Use
+    this to turn a name from decompiler output into an address to work with."""
     queries = normalize_list_input(queries)
 
     # Treat empty/"*" as "all functions" - but add limit
@@ -243,7 +246,9 @@ def int_convert(
         "Convert numbers to various formats (hex, decimal, binary, ascii)",
     ],
 ) -> list[dict]:
-    """Convert numbers to different formats"""
+    """Convert numbers between hex, decimal, binary and ASCII, in batch.
+
+    Pure computation — no IDB access, so it needs no instance state."""
     inputs = normalize_dict_list(inputs, lambda s: {"text": s, "size": 64})
 
     results = []
@@ -313,7 +318,12 @@ def list_funcs(
         "List functions with optional filtering and pagination",
     ],
 ) -> list[Page[Function]]:
-    """List functions"""
+    """List functions in the binary, paginated.
+
+    Requires auto-analysis to be finished — call analysis_wait() first on a
+    freshly opened binary or this returns a partial list. On large binaries use
+    count/offset rather than fetching everything; count=0 with a glob filter is
+    a full scan."""
     queries = normalize_dict_list(
         queries, lambda s: {"offset": 0, "count": 50, "filter": s}
     )
@@ -343,7 +353,10 @@ def list_globals(
         "List global variables with optional filtering and pagination",
     ],
 ) -> list[Page[Global]]:
-    """List globals"""
+    """List global variables (non-function named addresses), paginated.
+
+    Requires auto-analysis to be finished — call analysis_wait() first on a
+    freshly opened binary or names will still be missing."""
     queries = normalize_dict_list(
         queries, lambda s: {"offset": 0, "count": 50, "filter": s}
     )
@@ -371,7 +384,10 @@ def imports(
     offset: Annotated[int, "Offset"],
     count: Annotated[int, "Count (0=all)"],
 ) -> Page[Import]:
-    """List imports"""
+    """List imported functions grouped by source module.
+
+    Useful early: the import set is a fast signal of what a binary can do
+    (networking, crypto, process injection) before you decompile anything."""
     nimps = ida_nalt.get_import_module_qty()
 
     rv = []

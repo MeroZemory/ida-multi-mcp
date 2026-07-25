@@ -8,6 +8,7 @@ import re
 import sys
 import json
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,44 @@ def _load_static_ida_tools() -> list[dict]:
                   file=sys.stderr)
             _STATIC_IDA_TOOLS = []
     return _STATIC_IDA_TOOLS
+
+
+_SERVER_INSTRUCTIONS = """\
+ida-multi-mcp routes tool calls to one or more running IDA Pro instances.
+
+WORKFLOW — follow this order when you start on a binary:
+
+1. `list_instances()` to see what is loaded and get each `instance_id`.
+2. `analysis_wait(instance_id=...)` BEFORE any analysis work on a newly opened
+   binary. IDA analyses in the background, and until it finishes the function
+   list, xrefs, strings and decompiler output are all INCOMPLETE. On a mid-sized
+   DLL this is routinely thousands of missing functions, not a rounding error.
+   Use `analysis_status()` for a non-blocking check. If `analysis_wait` returns
+   `finished: false` it timed out rather than failed — call it again.
+3. `survey_binary(instance_id=...)` for a one-call overview before drilling in.
+
+ROUTING — pass `instance_id` on every tool call. It is required whenever two or
+more instances are registered; with exactly one it may be omitted.
+
+COST — IDA runs each instance on a single main thread. Calls to different
+instances proceed in parallel, but calls to the SAME instance queue behind one
+another, and a long scan makes that instance unresponsive. Prefer the batch and
+`*_query` tools over looping, paginate with count/offset on large binaries, and
+use `decompile_to_file` instead of decompiling functions one at a time.
+
+PERSISTENCE — renames, retypes and comments live in memory until `idb_save()`.
+"""
+
+
+# Tools whose results are silently wrong on a partially analysed IDB.
+# Deliberately not every tool: the warning has to stay rare enough to be read.
+_ANALYSIS_SENSITIVE_TOOLS = frozenset({
+    "list_funcs", "func_query", "func_profile", "classify_functions",
+    "lookup_funcs", "export_funcs", "list_globals", "survey_binary",
+    "callgraph", "callees", "xrefs_to", "xrefs_from", "xrefs_to_field",
+    "analyze_component", "analyze_batch", "index_functions", "similar_functions",
+})
+_ANALYSIS_STATE_TTL_SEC = 10.0
 
 
 def _json_text(value: Any) -> str:
@@ -108,7 +147,9 @@ class IdaMultiMcpServer:
         """
         self.registry = InstanceRegistry(registry_path)
         self.router = InstanceRouter(self.registry)
-        self.server = McpServer("ida-multi-mcp", version="1.0.0")
+        self.server = McpServer(
+            "ida-multi-mcp", version="1.0.0", instructions=_SERVER_INSTRUCTIONS
+        )
 
         # idalib lifecycle manager
         self.idalib_manager = IdalibManager(self.registry, python_executable=idalib_python)
@@ -118,6 +159,9 @@ class IdaMultiMcpServer:
         self._tool_cache: dict[str, dict] = {}
         self._cache_valid = False
         self._refresh_lock = threading.Lock()
+        # instance_id -> (analysis_incomplete, monotonic timestamp)
+        self._analysis_state_cache: dict[str, tuple[bool, float]] = {}
+        self._analysis_state_lock = threading.Lock()
 
         # Set up management tools
         management.set_registry(self.registry)
@@ -324,6 +368,24 @@ class IdaMultiMcpServer:
                 if not content:
                     content = [{"type": "text", "text": _json_text(structured)}]
 
+                # Results from a still-analysing IDB are silently partial. A
+                # description telling the caller to gate on analysis_wait() only
+                # helps if they read it first, so say it again here, attached to
+                # the incomplete answer itself.
+                if name in _ANALYSIS_SENSITIVE_TOOLS and self._analysis_incomplete(
+                    arguments.get("instance_id")
+                ):
+                    content = list(content) + [{
+                        "type": "text",
+                        "text": (
+                            "\n[ida-multi-mcp] WARNING: IDA auto-analysis has NOT finished on "
+                            "this instance. Functions, xrefs, strings and decompiler output are "
+                            "incomplete, and this result is very likely missing data. Call "
+                            "analysis_wait(instance_id=...) and then repeat this call before "
+                            "drawing any conclusions."
+                        ),
+                    }]
+
                 # If the tool has an output schema, Factory requires structuredContent.
                 # Even on errors, keep the structured payload if present.
                 if is_error:
@@ -367,6 +429,38 @@ class IdaMultiMcpServer:
                 }
 
         self.server.registry.methods["tools/call"] = custom_tools_call
+
+    def _analysis_incomplete(self, instance_id: str | None) -> bool:
+        """Whether the instance is still auto-analysing.
+
+        Cached briefly: this runs on every analysis-sensitive call, and the
+        answer only ever flips once per database. Anything unknown (no instance,
+        probe failed) reports False — a spurious warning on every result would
+        train the caller to ignore it.
+        """
+        if not instance_id:
+            return False
+        now = time.monotonic()
+        with self._analysis_state_lock:
+            entry = self._analysis_state_cache.get(instance_id)
+            if entry is not None and now - entry[1] < _ANALYSIS_STATE_TTL_SEC:
+                return entry[0]
+
+        try:
+            resp = self.router.route_request(
+                "tools/call",
+                {"name": "analysis_status", "arguments": {"instance_id": instance_id}},
+            )
+            structured = resp.get("structuredContent") if isinstance(resp, dict) else None
+            if not isinstance(structured, dict) or "finished" not in structured:
+                return False
+            incomplete = not bool(structured["finished"])
+        except Exception:
+            return False
+
+        with self._analysis_state_lock:
+            self._analysis_state_cache[instance_id] = (incomplete, now)
+        return incomplete
 
     def _handle_decompile_to_file(self, arguments: dict) -> dict:
         """Decompile functions and save results to local files.

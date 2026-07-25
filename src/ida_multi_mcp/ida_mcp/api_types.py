@@ -39,7 +39,10 @@ from .utils import (
 def declare_type(
     decls: Annotated[list[str] | str, "C type declarations"],
 ) -> list[dict]:
-    """Declare types"""
+    """Declare C types (structs, unions, enums, typedefs) into the IDB.
+
+    Takes ordinary C declaration text. Declare a type here first, then apply it
+    to an address with set_type."""
     decls = normalize_list_input(decls)
     results = []
 
@@ -213,7 +216,10 @@ def search_structs(
         str, "Case-insensitive substring to search for in structure names"
     ],
 ) -> list[dict]:
-    """Search structs"""
+    """Find structures whose name contains a substring (case-insensitive).
+
+    Returns name, size and field count. Use read_struct to see the fields or to
+    overlay the struct on an address."""
     results = []
     limit = compat.get_ordinal_limit()
 
@@ -388,7 +394,10 @@ def set_type(edits: list[TypeEdit] | TypeEdit) -> list[dict]:
 def infer_types(
     addrs: Annotated[list[str] | str, "Addresses to infer types for"],
 ) -> list[dict]:
-    """Infer types"""
+    """Infer the type of data or a function at an address.
+
+    Asks Hex-Rays first and falls back to IDA's own guess. Returns the inferred
+    type plus a confidence label; a null type means neither could decide."""
     addrs = normalize_list_input(addrs)
     results = []
 

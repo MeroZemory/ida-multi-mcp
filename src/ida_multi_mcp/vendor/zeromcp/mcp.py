@@ -310,9 +310,11 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             send_response(200, json.dumps(response).encode("utf-8"))
 
 class McpServer:
-    def __init__(self, name: str, version = "1.0.0", *, extensions: dict[str, set[str]] | None = None):
+    def __init__(self, name: str, version = "1.0.0", *, extensions: dict[str, set[str]] | None = None,
+                 instructions: str | None = None):
         self.name = name
         self.version = version
+        self.instructions = instructions
         self.cors_allowed_origins: Callable[[str], bool] | list[str] | str | None = self.cors_localhost
         self.post_body_limit = 10 * 1024 * 1024  # 10MB
         self.tools = McpRpcRegistry()
@@ -572,7 +574,7 @@ class McpServer:
 
     def _mcp_initialize(self, protocolVersion: str, capabilities: dict, clientInfo: dict, _meta: dict | None = None) -> dict:
         """MCP initialize method"""
-        return {
+        result = {
             "protocolVersion": getattr(self._protocol_version, "data", protocolVersion),
             "capabilities": {
                 "tools": {"listChanged": False},
@@ -587,6 +589,12 @@ class McpServer:
                 "version": self.version,
             },
         }
+        # Server-level usage guidance. Clients surface this once, up front —
+        # the right place for rules that apply across every tool rather than
+        # repeating them in each description.
+        if self.instructions:
+            result["instructions"] = self.instructions
+        return result
 
     def _mcp_tools_list(self, _meta: dict | None = None) -> dict:
         """MCP tools/list method"""

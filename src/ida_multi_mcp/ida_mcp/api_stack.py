@@ -32,7 +32,10 @@ from .utils import (
 @tool
 @idasync
 def stack_frame(addrs: Annotated[list[str] | str, "Address(es)"]) -> list[dict]:
-    """Get stack vars"""
+    """List the stack frame variables of one or more functions.
+
+    Returns each local's name, offset, size and type — the frame layout behind
+    the var_NN names in decompiler output."""
     addrs = normalize_list_input(addrs)
     results = []
 
