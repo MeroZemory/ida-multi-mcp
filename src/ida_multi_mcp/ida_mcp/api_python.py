@@ -1,4 +1,5 @@
 from typing import Annotated
+import ast
 import io
 import sys
 import idaapi
@@ -27,6 +28,66 @@ from .utils import parse_address, get_function
 # ============================================================================
 
 
+def _lazy_ida_import(module_name, globals=None, locals=None, fromlist=(), level=0):
+    # Security: only allow IDA-related module imports.
+    allowed_prefixes = ("ida_", "idaapi", "idautils", "idc")
+    if level != 0 or not any(module_name.startswith(p) for p in allowed_prefixes):
+        raise ImportError(
+            f"Module '{module_name}' is not allowed in py_eval. "
+            "Only IDA modules (ida_*, idaapi, idautils, idc) are permitted."
+        )
+    try:
+        return __import__(module_name, globals, locals, fromlist, level)
+    except ImportError:
+        # Module not available in this IDA build — bind None so user code can
+        # guard with `if mod is not None`. This is expected for optional
+        # modules; a typo'd name simply yields None rather than a crash.
+        import sys as _sys
+        print(
+            f"[py_eval] IDA module '{module_name}' could not be imported. "
+            "It may be unavailable in this IDA build.",
+            file=_sys.stderr,
+        )
+        return None
+
+
+def _execute_py_eval_code(code: str, exec_globals: dict) -> str | None:
+    tree = ast.parse(code, mode="exec")
+
+    def _eval_expr(expr_node: ast.expr) -> str | None:
+        expr = ast.Expression(expr_node)
+        ast.fix_missing_locations(expr)
+        value = eval(compile(expr, "<py_eval>", "eval"), exec_globals)
+        # Return None (not "None") so py_eval's `result_value or ""` renders
+        # a None result as "" — preserving the original output contract where
+        # a statement that produces no value yields an empty result string.
+        return None if value is None else str(value)
+
+    if len(tree.body) == 1 and isinstance(tree.body[0], ast.Expr):
+        return _eval_expr(tree.body[0].value)
+
+    before_keys = set(exec_globals.keys())
+    if tree.body and isinstance(tree.body[-1], ast.Expr):
+        prefix = ast.Module(body=tree.body[:-1], type_ignores=tree.type_ignores)
+        ast.fix_missing_locations(prefix)
+        if prefix.body:
+            exec(compile(prefix, "<py_eval>", "exec"), exec_globals)
+        return _eval_expr(tree.body[-1].value)
+
+    exec(compile(tree, "<py_eval>", "exec"), exec_globals)
+    if "result" in exec_globals:
+        return str(exec_globals["result"])
+
+    new_keys = [
+        key
+        for key in exec_globals.keys()
+        if key not in before_keys and not key.startswith("__")
+    ]
+    if new_keys:
+        return str(exec_globals[new_keys[-1]])
+    return None
+
+
 @tool
 @idasync
 @unsafe
@@ -46,20 +107,6 @@ def py_eval(
     try:
         sys.stdout = stdout_capture
         sys.stderr = stderr_capture
-
-        # Create execution context with IDA modules (lazy import to avoid errors)
-        def lazy_import(module_name):
-            # Security: only allow IDA-related module imports
-            allowed_prefixes = ("ida_", "idaapi", "idautils", "idc")
-            if not any(module_name.startswith(p) for p in allowed_prefixes):
-                raise ImportError(
-                    f"Module '{module_name}' is not allowed in py_eval. "
-                    "Only IDA modules (ida_*, idaapi, idautils, idc) are permitted."
-                )
-            try:
-                return __import__(module_name)
-            except Exception:
-                return None
 
         # Security: restricted builtins - remove dangerous functions that enable
         # arbitrary file/network/process access outside IDA's analysis context.
@@ -99,110 +146,68 @@ def py_eval(
             "RuntimeError": RuntimeError, "StopIteration": StopIteration,
             "NotImplementedError": NotImplementedError, "ZeroDivisionError": ZeroDivisionError,
             # Restricted import - only IDA modules allowed
-            "__import__": lazy_import,
+            "__import__": _lazy_ida_import,
         }
 
         exec_globals = {
             "__builtins__": _safe_builtins,
+            "__name__": "__py_eval__",
             "idaapi": idaapi,
             "idc": idc,
-            "idautils": lazy_import("idautils"),
-            "ida_allins": lazy_import("ida_allins"),
-            "ida_auto": lazy_import("ida_auto"),
-            "ida_bitrange": lazy_import("ida_bitrange"),
+            "idautils": _lazy_ida_import("idautils"),
+            "ida_allins": _lazy_ida_import("ida_allins"),
+            "ida_auto": _lazy_ida_import("ida_auto"),
+            "ida_bitrange": _lazy_ida_import("ida_bitrange"),
             "ida_bytes": ida_bytes,
             "ida_dbg": ida_dbg,
-            "ida_dirtree": lazy_import("ida_dirtree"),
-            "ida_diskio": lazy_import("ida_diskio"),
+            "ida_dirtree": _lazy_ida_import("ida_dirtree"),
+            "ida_diskio": _lazy_ida_import("ida_diskio"),
             "ida_entry": ida_entry,
-            "ida_expr": lazy_import("ida_expr"),
-            "ida_fixup": lazy_import("ida_fixup"),
-            "ida_fpro": lazy_import("ida_fpro"),
+            "ida_expr": _lazy_ida_import("ida_expr"),
+            "ida_fixup": _lazy_ida_import("ida_fixup"),
+            "ida_fpro": _lazy_ida_import("ida_fpro"),
             "ida_frame": ida_frame,
             "ida_funcs": ida_funcs,
-            "ida_gdl": lazy_import("ida_gdl"),
-            "ida_graph": lazy_import("ida_graph"),
+            "ida_gdl": _lazy_ida_import("ida_gdl"),
+            "ida_graph": _lazy_ida_import("ida_graph"),
             "ida_hexrays": ida_hexrays,
             "ida_ida": ida_ida,
-            "ida_idd": lazy_import("ida_idd"),
-            "ida_idp": lazy_import("ida_idp"),
-            "ida_ieee": lazy_import("ida_ieee"),
+            "ida_idd": _lazy_ida_import("ida_idd"),
+            "ida_idp": _lazy_ida_import("ida_idp"),
+            "ida_ieee": _lazy_ida_import("ida_ieee"),
             "ida_kernwin": ida_kernwin,
-            "ida_libfuncs": lazy_import("ida_libfuncs"),
+            "ida_libfuncs": _lazy_ida_import("ida_libfuncs"),
             "ida_lines": ida_lines,
-            "ida_loader": lazy_import("ida_loader"),
-            "ida_merge": lazy_import("ida_merge"),
-            "ida_mergemod": lazy_import("ida_mergemod"),
-            "ida_moves": lazy_import("ida_moves"),
+            "ida_loader": _lazy_ida_import("ida_loader"),
+            "ida_merge": _lazy_ida_import("ida_merge"),
+            "ida_mergemod": _lazy_ida_import("ida_mergemod"),
+            "ida_moves": _lazy_ida_import("ida_moves"),
             "ida_nalt": ida_nalt,
             "ida_name": ida_name,
-            "ida_netnode": lazy_import("ida_netnode"),
-            "ida_offset": lazy_import("ida_offset"),
-            "ida_pro": lazy_import("ida_pro"),
-            "ida_problems": lazy_import("ida_problems"),
-            "ida_range": lazy_import("ida_range"),
-            "ida_regfinder": lazy_import("ida_regfinder"),
-            "ida_registry": lazy_import("ida_registry"),
-            "ida_search": lazy_import("ida_search"),
+            "ida_netnode": _lazy_ida_import("ida_netnode"),
+            "ida_offset": _lazy_ida_import("ida_offset"),
+            "ida_pro": _lazy_ida_import("ida_pro"),
+            "ida_problems": _lazy_ida_import("ida_problems"),
+            "ida_range": _lazy_ida_import("ida_range"),
+            "ida_regfinder": _lazy_ida_import("ida_regfinder"),
+            "ida_registry": _lazy_ida_import("ida_registry"),
+            "ida_search": _lazy_ida_import("ida_search"),
             "ida_segment": ida_segment,
-            "ida_segregs": lazy_import("ida_segregs"),
-            "ida_srclang": lazy_import("ida_srclang"),
-            "ida_strlist": lazy_import("ida_strlist"),
-            "ida_struct": lazy_import("ida_struct"),
-            "ida_tryblks": lazy_import("ida_tryblks"),
+            "ida_segregs": _lazy_ida_import("ida_segregs"),
+            "ida_srclang": _lazy_ida_import("ida_srclang"),
+            "ida_strlist": _lazy_ida_import("ida_strlist"),
+            "ida_struct": _lazy_ida_import("ida_struct"),
+            "ida_tryblks": _lazy_ida_import("ida_tryblks"),
             "ida_typeinf": ida_typeinf,
-            "ida_ua": lazy_import("ida_ua"),
-            "ida_undo": lazy_import("ida_undo"),
+            "ida_ua": _lazy_ida_import("ida_ua"),
+            "ida_undo": _lazy_ida_import("ida_undo"),
             "ida_xref": ida_xref,
-            "ida_enum": lazy_import("ida_enum"),
+            "ida_enum": _lazy_ida_import("ida_enum"),
             "parse_address": parse_address,
             "get_function": get_function,
         }
 
-        result_value = None
-
-        # Try evaluation first (for simple expressions)
-        try:
-            result_value = str(eval(code, exec_globals))
-        except Exception:
-            # Execute as statements
-            exec_locals = {}
-            exec(code, exec_globals, exec_locals)
-
-            # Merge locals into globals for multi-statement blocks
-            exec_globals.update(exec_locals)
-
-            # Try to eval the last line as an expression (Jupyter-style)
-            lines = code.strip().split("\n")
-            if lines:
-                last_line = lines[-1].strip()
-                if last_line and not last_line.startswith(
-                    (
-                        "#",
-                        "import ",
-                        "from ",
-                        "def ",
-                        "class ",
-                        "if ",
-                        "for ",
-                        "while ",
-                        "with ",
-                        "try:",
-                    )
-                ):
-                    try:
-                        result_value = str(eval(last_line, exec_globals))
-                    except Exception:
-                        pass
-
-            # Return 'result' variable if explicitly set
-            if result_value is None and "result" in exec_locals:
-                result_value = str(exec_locals["result"])
-
-            # Return last assigned variable
-            if result_value is None and exec_locals:
-                last_key = list(exec_locals.keys())[-1]
-                result_value = str(exec_locals[last_key])
+        result_value = _execute_py_eval_code(code, exec_globals)
 
         # Collect output
         stdout_text = stdout_capture.getvalue()
@@ -219,8 +224,8 @@ def py_eval(
 
         return {
             "result": "",
-            "stdout": "",
-            "stderr": traceback.format_exc(),
+            "stdout": stdout_capture.getvalue(),
+            "stderr": stderr_capture.getvalue() + traceback.format_exc(),
         }
     finally:
         sys.stdout = old_stdout
