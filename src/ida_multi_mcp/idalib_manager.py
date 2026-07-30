@@ -12,7 +12,9 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
+from collections import deque
 from typing import TYPE_CHECKING
 
 from .health import is_process_alive, ping_instance, query_binary_metadata
@@ -148,11 +150,18 @@ class IdalibManager:
             creation_flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
 
         try:
-            # stdout is discarded: the worker logs via stderr, and leaving an
-            # undrained PIPE deadlocks the worker once IDA's analysis output
-            # fills the OS pipe buffer (~64KB) during _wait_for_ready.
+            # stdin MUST be DEVNULL: when the MCP server runs as a stdio child
+            # of an MCP client (Claude, Trae, Cursor, etc.), its stdin is the
+            # MCP protocol pipe. Without stdin=DEVNULL the worker inherits
+            # this pipe, and idalib.dll's initialization blocks reading from
+            # it — the worker never reaches serve(), causing the persistent
+            # "did not become ready" timeout.
+            # stdout=DEVNULL discards IDA's analysis output.
+            # stderr=PIPE is drained by a background thread (see below) to
+            # prevent pipe buffer deadlock.
             proc = subprocess.Popen(
                 cmd,
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 creationflags=creation_flags,
@@ -167,16 +176,33 @@ class IdalibManager:
         except Exception as exc:
             return {"error": f"Failed to spawn idalib worker: {exc}"}
 
+        # Drain stderr in background to prevent pipe buffer deadlock.
+        # Without this, IDA's analysis logs fill the OS pipe and the worker
+        # blocks forever on stderr.write(), never starting its HTTP server.
+        # Bounded deque so a chatty worker cannot grow memory without limit.
+        stderr_chunks: deque[bytes] = deque(maxlen=64)
+
+        def _drain_stderr():
+            try:
+                for chunk in iter(lambda: proc.stderr.read(4096), b""):
+                    stderr_chunks.append(chunk)
+            except Exception:
+                pass
+
+        stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+        stderr_thread.start()
+
         # Wait for the worker to become ready.
         if not self._wait_for_ready(host, port, proc, timeout):
-            # Worker didn't come up — collect stderr for diagnostics.
-            stderr_text = ""
+            # Worker didn't come up — terminate first so its dying stderr is
+            # captured by the drain thread, then collect it for diagnostics.
             try:
                 proc.terminate()
-                _, stderr_bytes = proc.communicate(timeout=5)
-                stderr_text = stderr_bytes.decode(errors="replace")[-500:]
+                proc.wait(timeout=5)
             except Exception:
                 proc.kill()
+            stderr_thread.join(timeout=1)
+            stderr_text = b"".join(stderr_chunks).decode(errors="replace")[-500:]
             return {
                 "error": (
                     f"idalib worker did not become ready within {timeout}s. "
