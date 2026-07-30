@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import argparse
+import hashlib
 import json
 import tempfile
 import time
@@ -1162,6 +1163,76 @@ def cmd_config(args):
     return 0
 
 
+def _sha256_file(path: Path) -> str | None:
+    """Content hash, reading through a symlink. None when unreadable."""
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _loader_install_state(custom_dir=None) -> dict:
+    """Describe the installed loader: where, how, and whether it matches ours.
+
+    File size is not a usable check here: Windows reports a symlink's own length
+    as 0 bytes, so a correctly symlinked loader looks empty to `Get-Item` and to
+    anything else reading the link rather than its target. Compare content hashes
+    through the link instead, which is mode-agnostic.
+    """
+    packaged = Path(__file__).parent / "plugin" / "ida_multi_mcp_loader.py"
+    installed = _get_ida_plugins_dir(custom_dir) / "ida_multi_mcp.py"
+
+    is_symlink = installed.is_symlink()
+    exists = installed.exists()  # follows the link, so a dangling one is False
+
+    if is_symlink:
+        mode = "symlink"
+    elif exists:
+        mode = "copy"
+    else:
+        mode = "missing"
+
+    link_target = None
+    if is_symlink:
+        try:
+            link_target = str(installed.resolve())
+        except OSError:
+            pass
+
+    packaged_sha = _sha256_file(packaged)
+    installed_sha = _sha256_file(installed) if exists else None
+
+    return {
+        "packaged_loader": str(packaged),
+        "installed_loader": str(installed),
+        "mode": mode,
+        "exists": exists,
+        "link_target": link_target,
+        "packaged_sha256": packaged_sha,
+        "installed_sha256": installed_sha,
+        "match": bool(installed_sha and installed_sha == packaged_sha),
+    }
+
+
+def cmd_verify(args):
+    """Report installed-loader state as JSON. Exit 0 only when it matches."""
+    state = _loader_install_state(args.ida_dir)
+    print(json.dumps(state, indent=2))
+
+    if state["match"]:
+        return 0
+    if state["mode"] == "missing":
+        print("\n  Loader is not installed. Run: ida-multi-mcp --install",
+              file=sys.stderr)
+    elif state["installed_sha256"] is None:
+        print("\n  Loader path exists but could not be read (dangling symlink?). "
+              "Run: ida-multi-mcp --install", file=sys.stderr)
+    else:
+        print("\n  Installed loader differs from the packaged one, so it is stale. "
+              "Run: ida-multi-mcp --install", file=sys.stderr)
+    return 1
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -1184,8 +1255,12 @@ def main():
         help="Print MCP client configuration JSON"
     )
     parser.add_argument(
+        "--verify", action="store_true",
+        help="Verify the installed IDA plugin loader (JSON; exit 1 if stale or missing)"
+    )
+    parser.add_argument(
         "--ida-dir", type=str, default=None,
-        help="Custom IDA Pro directory (for --install/--uninstall)"
+        help="Custom IDA Pro directory (for --install/--uninstall/--verify)"
     )
     parser.add_argument(
         "--registry", type=str, default=None,
@@ -1203,6 +1278,8 @@ def main():
         sys.exit(cmd_install(args))
     elif args.uninstall:
         sys.exit(cmd_uninstall(args))
+    elif args.verify:
+        sys.exit(cmd_verify(args))
     elif args.list:
         cmd_list(args)
         return
