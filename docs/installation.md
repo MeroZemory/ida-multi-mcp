@@ -2,7 +2,7 @@
 
 This guide is for AI agents. Follow each step exactly.
 
-Last updated: 2026-02-17
+Last updated: 2026-07-30
 Governance reference: `docs/README.md`
 Authority note: this document is operational guidance and must not redefine contracts.
 
@@ -206,18 +206,25 @@ Pass criteria:
 
 ### 2) Plugin deployment health
 
-macOS/Linux:
 ```bash
-ls -l ~/.idapro/plugins/ida_multi_mcp.py
-```
-
-Windows (PowerShell):
-```powershell
-Get-Item "$env:APPDATA\\Hex-Rays\\IDA Pro\\plugins\\ida_multi_mcp.py"
+ida-multi-mcp --verify
 ```
 
 Pass criteria:
-- loader file exists in IDA plugins directory
+- exit code is 0 and the JSON reports `"match": true`
+
+`--verify` compares the sha256 of the installed loader against the packaged one,
+reading through a symlink when the install is symlinked. Do not judge this by file
+size: `--install` prefers a symlink, and Windows reports a symlink's own length as
+0 bytes, so a correct install looks empty to `Get-Item` and to anything else that
+inspects the link rather than its target.
+
+Reported `mode` values:
+- `symlink` — linked to the packaged loader; picks up package updates directly
+- `copy` — a copy was made because symlinks were unavailable (on Windows this
+  needs Administrator or Developer Mode). Re-run `--install` after upgrading the
+  package, since a copy does not track it
+- `missing` — nothing installed at that path
 
 ### 3) Runtime registration health (requires IDA open with a binary)
 
@@ -244,8 +251,9 @@ If post-flight checks fail, apply fixes in order.
 1. Python mismatch suspected:
    - Re-check IDA console Python version (`import sys; print(sys.version)`).
    - Reinstall with that exact version (`python3.11 -m pip install ...` or `py -3.12 -m pip install ...`).
-2. Plugin loader missing:
+2. Plugin loader missing or stale (`--verify` reports `"match": false`):
    - Re-run `ida-multi-mcp --install` (or `--install --ida-dir <IDA_DIR>` for custom installs).
+   - Re-run `ida-multi-mcp --verify` to confirm `"match": true`.
 3. No instances registered:
    - Restart IDA.
    - Open any binary.
