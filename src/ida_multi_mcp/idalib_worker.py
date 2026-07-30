@@ -123,6 +123,12 @@ def main() -> None:
         signal.signal(signal.SIGBREAK, _shutdown)
 
     # --- Serve ---------------------------------------------------------------
+    # Truncated tool output hands back a download URL, and only this process can
+    # serve it — the cache lives here, in rpc's module state. Without this the URL
+    # keeps rpc's default (port 13337), which nothing listens on.
+    from ida_multi_mcp.ida_mcp.rpc import set_download_base_url
+    set_download_base_url(f"http://{args.host}:{args.port}")
+
     logger.info("Serving on %s:%d", args.host, args.port)
     MCP_SERVER.serve(host=args.host, port=args.port, background=False)
 
