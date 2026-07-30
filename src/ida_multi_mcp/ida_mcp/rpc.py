@@ -17,7 +17,11 @@ OUTPUT_CACHE_MAX_SIZE = 100
 OUTPUT_CACHE_TTL_SECONDS = 600  # 10 minutes
 _output_cache: dict[str, tuple[Any, float]] = {}  # id -> (data, timestamp)
 _output_cache_lock = threading.Lock()  # Thread safety for concurrent HTTP requests
-_download_base_url: str = os.environ.get("IDA_MCP_URL", "http://127.0.0.1:13337")
+# Unset until whoever serves the /output/ route names their own port. There is no
+# sensible default: the cache below is this process's module state, so only this
+# process can answer, and guessing a port would advertise a dead address. Callers
+# that serve the route must call set_download_base_url().
+_download_base_url: str | None = os.environ.get("IDA_MCP_URL")
 
 
 def set_download_base_url(url: str) -> None:
@@ -25,7 +29,7 @@ def set_download_base_url(url: str) -> None:
     _download_base_url = url.rstrip("/")
 
 
-def get_download_base_url() -> str:
+def get_download_base_url() -> str | None:
     return _download_base_url
 
 
@@ -63,14 +67,25 @@ def _truncate_value(value: Any, depth: int = 0) -> Any:
 
 
 def _add_download_info(result: Any, output_id: str, total_chars: int) -> Any:
-    download_url = f"{_download_base_url}/output/{output_id}.json"
     info = {
         "_output_truncated": True,
         "_total_chars": total_chars,
         "_output_id": output_id,
-        "_download_url": download_url,
-        "_download_hint": f"Output truncated. Run: curl -o .ida-mcp/{output_id}.json {download_url}",
     }
+    if _download_base_url:
+        download_url = f"{_download_base_url}/output/{output_id}.json"
+        info["_download_url"] = download_url
+        info["_download_hint"] = (
+            f"Output truncated. Run: curl -o .ida-mcp/{output_id}.json {download_url}"
+        )
+    else:
+        # Say so rather than hand out a URL nobody answers. The remainder of the
+        # output is only reachable over /output/, so a wrong address loses it.
+        info["_download_error"] = (
+            "Output truncated, but no download URL is configured for this instance "
+            "(set_download_base_url was never called). The remaining "
+            f"{total_chars:,} chars cannot be retrieved."
+        )
 
     if isinstance(result, dict):
         return {**result, **info}

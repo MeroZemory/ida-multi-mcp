@@ -232,7 +232,9 @@ def _instance_key(instance_id: str) -> tuple[str | None, dict | None]:
         return None, None
     key = fp.get("sha256") or fp.get("md5")
     if not key:
-        # Fallback (design §12): derive a stable key from path + size.
+        # Fallback (design §12): derive a stable key from path + function count.
+        # Weaker than the hash it replaces -- two different binaries at the same
+        # path with equal function counts collide. Flagged as key_fallback; see #24.
         info = (_registry.get_instance(instance_id) or {}) if _registry else {}
         seed = f"{info.get('binary_path', '')}:{fp.get('function_count', 0)}"
         key = "fb-" + hashlib.sha256(seed.encode()).hexdigest()[:24]
