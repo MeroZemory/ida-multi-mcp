@@ -2,6 +2,8 @@
 
 # ida-multi-mcp
 
+[![MCP Toplist](https://mcptoplist.com/badge/pulsemcp%2Fmerozemory-ida-multi.svg)](https://mcptoplist.com/server/pulsemcp%2Fmerozemory-ida-multi)
+
 **Reverse-engineer several binaries at once — dropper, payload, C2 — through a single MCP endpoint.**
 
 Every IDA Pro instance auto-registers on startup, so your LLM client sees all of them without touching its config. Includes local, name-independent function-similarity search across binaries.
