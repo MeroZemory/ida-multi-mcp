@@ -1,15 +1,16 @@
-"""Tests for ida_mcp/sync.py reentrancy and batch-mode handling (IDA stubbed).
+"""Tests for ida_mcp/sync.py reentrancy and GUI-safe handling (IDA stubbed).
 
-sync.py imports idaapi / ida_kernwin / idc at module scope, so every IDA module
-is replaced with a stub before importing it. idaapi.execute_sync is stubbed to
-call the callback inline, which is exactly the situation the real one creates:
-the callback runs on the IDA main thread while the requesting thread waits.
+sync.py imports IDA modules at module scope, so every IDA module is replaced
+with a stub before importing it. idaapi.execute_sync is stubbed to call the
+callback inline, which is exactly the situation the real one creates: the
+callback runs on the IDA main thread while the requesting thread waits. The
+idc stub remains as a regression spy for forbidden batch-mode calls.
 
 Regression coverage for two bugs:
   1. A reentrant @idasync call drained the LifoQueue, so the outer call's
      finally blocked forever on Queue.get() and froze the IDA main thread.
-  2. idc.batch() was toggled on the requesting worker thread rather than on
-     the IDA main thread inside execute_sync.
+  2. @idasync enabled IDA's process-global batch mode, which suppresses and
+     auto-accepts unrelated dialogs in the interactive GUI.
 """
 
 import sys
@@ -78,7 +79,8 @@ def _install_stubs(saved):
 
     sys.modules["idaapi"].execute_sync.side_effect = _execute_sync
 
-    # batch() returns the previous batch value, like the real idc.batch().
+    # Track batch state and calls so tests detect any attempt to suppress GUI
+    # dialogs through IDA's process-global batch flag.
     batch_state = {"value": 0}
 
     def _batch(new_value):
@@ -148,7 +150,7 @@ def sync_mod():
     module, batch_state = _install_stubs(saved)
     module._test_batch_state = batch_state
     # Timeout machinery installs a profile hook; disable it so the tests
-    # exercise the queue/batch logic directly.
+    # exercise the queue and GUI-state logic directly.
     module._DEFAULT_TOOL_TIMEOUT_SEC = 0.0
     try:
         yield module
@@ -200,19 +202,20 @@ def test_reentrant_call_reports_error_instead_of_blocking(sync_mod):
         tool()
 
 
-def test_batch_is_toggled_on_the_ida_main_thread(sync_mod):
-    """idc.batch() must run inside execute_sync, not before it."""
+def test_idasync_does_not_enable_global_batch_mode(sync_mod):
+    """MCP calls must not suppress or auto-accept unrelated IDA dialogs."""
     observed = {}
 
     @sync_mod.idasync
     def tool():
-        # Inside the tool body — i.e. on the IDA main thread — batch is on.
+        # Inside the tool body, normal interactive prompting must remain on.
         observed["during"] = sync_mod._test_batch_state["value"]
         return "ok"
 
     assert tool() == "ok"
-    assert observed["during"] == 1, "batch mode was not enabled on the main thread"
-    assert sync_mod._test_batch_state["value"] == 0, "batch mode was not restored"
+    assert observed["during"] == 0
+    assert sync_mod._test_batch_state["value"] == 0
+    sys.modules["idc"].batch.assert_not_called()
 
 
 def test_native_cancel_fires_at_the_deadline(sync_mod):
@@ -261,7 +264,7 @@ def test_native_cancel_timer_is_cancelled_on_fast_calls(sync_mod):
     assert kernwin.set_cancelled.call_count == 0, "timer was not cancelled"
 
 
-def test_batch_is_restored_when_the_tool_raises(sync_mod):
+def test_failing_tool_does_not_change_global_batch_mode(sync_mod):
     @sync_mod.idasync
     def failing_tool():
         raise ValueError("boom")
@@ -270,4 +273,5 @@ def test_batch_is_restored_when_the_tool_raises(sync_mod):
         failing_tool()
 
     assert sync_mod._test_batch_state["value"] == 0
+    sys.modules["idc"].batch.assert_not_called()
     assert sync_mod.call_stack.empty()
