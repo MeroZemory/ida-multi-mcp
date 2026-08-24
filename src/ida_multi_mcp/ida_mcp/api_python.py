@@ -28,6 +28,9 @@ from .utils import parse_address, get_function
 # ============================================================================
 
 
+_IDA_MODULE_CACHE: dict[str, object | None] = {}
+
+
 def _lazy_ida_import(module_name, globals=None, locals=None, fromlist=(), level=0):
     # Security: only allow IDA-related module imports.
     allowed_prefixes = ("ida_", "idaapi", "idautils", "idc")
@@ -36,18 +39,19 @@ def _lazy_ida_import(module_name, globals=None, locals=None, fromlist=(), level=
             f"Module '{module_name}' is not allowed in py_eval. "
             "Only IDA modules (ida_*, idaapi, idautils, idc) are permitted."
         )
+    if module_name in _IDA_MODULE_CACHE:
+        return _IDA_MODULE_CACHE[module_name]
     try:
-        return __import__(module_name, globals, locals, fromlist, level)
+        module = __import__(module_name, globals, locals, fromlist, level)
+        _IDA_MODULE_CACHE[module_name] = module
+        return module
     except ImportError:
         # Module not available in this IDA build — bind None so user code can
         # guard with `if mod is not None`. This is expected for optional
-        # modules; a typo'd name simply yields None rather than a crash.
-        import sys as _sys
-        print(
-            f"[py_eval] IDA module '{module_name}' could not be imported. "
-            "It may be unavailable in this IDA build.",
-            file=_sys.stderr,
-        )
+        # modules. Cache the miss so every py_eval call does not repeat the
+        # import probe. Expected misses remain silent; explicit user code can
+        # still test the prebound module for None.
+        _IDA_MODULE_CACHE[module_name] = None
         return None
 
 
