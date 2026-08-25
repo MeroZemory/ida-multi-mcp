@@ -64,6 +64,25 @@ This usually means IDA's Python cannot find the package due to a **Python versio
 </details>
 
 <details>
+<summary>MCP handshake fails on Windows: "connection closed: initialize response"</summary>
+
+This happens when the MCP client starts Python in UTF-8 mode (`PYTHONUTF8=1`, Grok and some Codex/Claude setups) on a non-English Windows console.
+
+`ida-multi-mcp` scans for live IDA GUI processes with `tasklist` / `netstat` **before** answering MCP `initialize`. Those utilities emit OEM/GBK. With `text=True` and UTF-8 decoding, CPython's stdout reader raises `UnicodeDecodeError`, `check_output` returns `None`, and `out.strip()` crashes the process.
+
+Current `ida-multi-mcp` decodes those commands as OEM with replacement and treats discovery failures as "no GUI instances" so headless `idalib_*` tools still start.
+
+If you are on an older install:
+
+```bash
+pip install -U git+https://github.com/MeroZemory/ida-multi-mcp.git
+```
+
+Then restart the MCP client. You do **not** need IDA GUI running for the stdio server to handshake.
+
+</details>
+
+<details>
 <summary>MCP server fails to connect (macOS)</summary>
 
 If your MCP client shows `Status: failed` for ida-multi-mcp, the registered command may point to the wrong Python version.
