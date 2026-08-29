@@ -12,6 +12,9 @@ from ida_multi_mcp.health import (
     check_instance_health,
     cleanup_stale_instances,
     query_binary_metadata,
+    rediscover_instances,
+    _console_output,
+    _find_ida_listening_ports,
 )
 
 
@@ -158,3 +161,70 @@ class TestQueryBinaryMetadata:
 
     def test_rejects_non_localhost(self):
         assert query_binary_metadata("10.0.0.1", 5000) is None
+
+
+# ---------------------------------------------------------------------------
+# Windows console discovery (PYTHONUTF8 / OEM)
+# ---------------------------------------------------------------------------
+
+class TestConsoleOutput:
+    def test_windows_uses_oem_and_replace(self):
+        with patch("ida_multi_mcp.health.sys.platform", "win32"):
+            with patch("subprocess.check_output", return_value=None) as mock_output:
+                assert _console_output(["tasklist", "/FO", "CSV", "/NH"]) == ""
+        kwargs = mock_output.call_args.kwargs
+        assert kwargs["encoding"] == "oem"
+        assert kwargs["errors"] == "replace"
+
+    def test_none_stdout_becomes_empty_string(self):
+        with patch("subprocess.check_output", return_value=None):
+            assert _console_output(["tasklist"]) == ""
+
+    def test_unicode_decode_error_becomes_empty_string(self):
+        err = UnicodeDecodeError("utf-8", b"\xb1", 0, 1, "invalid start byte")
+        with patch("subprocess.check_output", side_effect=err):
+            assert _console_output(["tasklist"]) == ""
+
+
+class TestFindIdaListeningPorts:
+    def test_empty_console_output_does_not_crash(self):
+        with patch("ida_multi_mcp.health.sys.platform", "win32"):
+            with patch("ida_multi_mcp.health._console_output", return_value=""):
+                assert _find_ida_listening_ports() == []
+
+    def test_parses_english_listen_state(self):
+        def fake_output(cmd, timeout=10):
+            if cmd[0] == "tasklist":
+                return '"ida.exe","4242","Console","1","100,000 K"\n'
+            return "  TCP    127.0.0.1:57079         0.0.0.0:0              LISTENING       4242\n"
+
+        with patch("ida_multi_mcp.health.sys.platform", "win32"):
+            with patch("ida_multi_mcp.health._console_output", side_effect=fake_output):
+                assert _find_ida_listening_ports() == [(4242, 57079)]
+
+    def test_parses_localized_listen_state_and_session_name(self):
+        def fake_output(cmd, timeout=10):
+            if cmd[0] == "tasklist":
+                return '"ida64.exe","4242","控制台","1","100,000 K"\n'
+            return "  TCP    127.0.0.1:57079         0.0.0.0:0              侦听            4242\n"
+
+        with patch("ida_multi_mcp.health.sys.platform", "win32"):
+            with patch("ida_multi_mcp.health._console_output", side_effect=fake_output):
+                assert _find_ida_listening_ports() == [(4242, 57079)]
+
+    def test_parses_ipv6_local_address(self):
+        def fake_output(cmd, timeout=10):
+            if cmd[0] == "tasklist":
+                return '"ida.exe","99","Console","1","8 K"\n'
+            return "  TCP    [::1]:12345            [::]:0                 LISTENING       99\n"
+
+        with patch("ida_multi_mcp.health.sys.platform", "win32"):
+            with patch("ida_multi_mcp.health._console_output", side_effect=fake_output):
+                assert _find_ida_listening_ports() == [(99, 12345)]
+
+
+class TestRediscoverInstances:
+    def test_swallows_unexpected_errors(self):
+        registry = MagicMock()
+        registry.list_instances.side_effect = RuntimeError("boom")
+        assert rediscover_instances(registry) == []
