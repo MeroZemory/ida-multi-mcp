@@ -409,9 +409,10 @@ class McpServer:
         # Only start thread after successful bind
         self._running = True
 
+        url_host = f"[{host}]" if ":" in host else host
         print("[MCP] Server started:")
-        print(f"  Streamable HTTP: http://{host}:{port}/mcp")
-        print(f"  SSE: http://{host}:{port}/sse")
+        print(f"  Streamable HTTP: http://{url_host}:{port}/mcp")
+        print(f"  SSE: http://{url_host}:{port}/sse")
 
         def serve_forever():
             try:

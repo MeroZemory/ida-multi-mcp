@@ -243,6 +243,36 @@ class TestIdalibManagerSpawn:
         assert mock_terminate.call_args.kwargs["shutdown_token"]
         assert tmp_registry.list_instances() == {}
 
+    @patch("ida_multi_mcp.idalib_manager.IdalibManager._wait_for_ready", return_value=True)
+    @patch("ida_multi_mcp.idalib_manager.query_binary_metadata", return_value=None)
+    @patch("ida_multi_mcp.idalib_manager.subprocess.Popen")
+    def test_spawn_on_idb_reports_early_metadata_worker_exit(
+        self,
+        mock_popen,
+        mock_meta,
+        mock_ready,
+        tmp_path,
+        tmp_registry,
+    ):
+        idb = tmp_path / "test.exe.i64"
+        idb.write_bytes(b"\x00" * 16)
+
+        mock_proc = MagicMock()
+        mock_proc.pid = 77780
+        mock_proc.poll.return_value = 23
+        mock_proc.stderr.read.side_effect = [b"metadata worker failed", b""]
+        mock_popen.return_value = mock_proc
+
+        mgr = IdalibManager(tmp_registry)
+        result = mgr.spawn_session(str(idb))
+
+        assert mock_ready.call_count == 1
+        assert mock_meta.call_count == 1
+        assert "after 1 attempt(s)" in result["error"]
+        assert "worker exited with code 23" in result["error"]
+        assert "metadata worker failed" in result["error"]
+        assert tmp_registry.list_instances() == {}
+
     @patch("ida_multi_mcp.idalib_manager.subprocess.Popen")
     @patch("ida_multi_mcp.idalib_manager.ping_instance", return_value=False)
     def test_spawn_timeout(self, mock_ping, mock_popen, tmp_path, tmp_registry):

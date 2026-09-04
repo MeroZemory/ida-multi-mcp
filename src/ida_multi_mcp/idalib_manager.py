@@ -290,13 +290,17 @@ class IdalibManager:
         metadata = None
         module_name = None
         attempts = _IDB_METADATA_QUERY_ATTEMPTS if is_idb_input else 1
+        attempts_made = 0
+        worker_returncode = None
         for attempt in range(attempts):
+            attempts_made = attempt + 1
             metadata = query_binary_metadata(selected_host, port, timeout=5.0)
             candidate = (metadata or {}).get("module") if metadata else None
             if isinstance(candidate, str) and candidate.strip():
                 module_name = candidate.strip()
                 break
-            if proc.poll() is not None:
+            worker_returncode = proc.poll()
+            if worker_returncode is not None:
                 break
             if attempt + 1 < attempts:
                 time.sleep(_IDB_METADATA_QUERY_INTERVAL)
@@ -309,10 +313,20 @@ class IdalibManager:
                 shutdown_token=shutdown_token,
             )
             stderr_thread.join(timeout=1)
+            stderr_text = b"".join(stderr_chunks).decode(errors="replace")[-500:]
+            if worker_returncode is not None:
+                failure_detail = (
+                    f" after {attempts_made} attempt(s); worker exited with code "
+                    f"{worker_returncode}"
+                )
+                if stderr_text:
+                    failure_detail += f". Last stderr: {stderr_text}"
+            else:
+                failure_detail = f" after {attempts_made} attempt(s)"
             return {
                 "error": (
                     "idalib worker became ready, but canonical IDB module metadata "
-                    f"was unavailable after {attempts} attempts; worker stopped "
+                    f"was unavailable{failure_detail}; worker stopped "
                     "without registering an ambiguous instance"
                 )
             }
