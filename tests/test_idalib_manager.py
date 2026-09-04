@@ -4,12 +4,16 @@ All tests mock subprocesses; no idapro required.
 """
 
 import subprocess
-import time
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ida_multi_mcp.idalib_manager import IdalibManager, _find_free_port
+from ida_multi_mcp.idalib_manager import (
+    IdalibManager,
+    _find_free_port,
+    _preferred_loopback_host,
+    _request_worker_shutdown,
+)
 
 
 class TestFindFreePort:
@@ -23,11 +27,59 @@ class TestFindFreePort:
         # At least 2 unique ports (unlikely all 5 collide)
         assert len(ports) >= 2
 
+    def test_supports_ipv6_loopback_when_available(self):
+        try:
+            port = _find_free_port("::1")
+        except OSError:
+            pytest.skip("IPv6 loopback is disabled")
+        assert isinstance(port, int)
+        assert port > 0
+
+
+class TestPreferredLoopbackHost:
+    @patch("ida_multi_mcp.idalib_manager.sys.platform", "win32")
+    def test_windows_prefers_ipv6_when_bind_succeeds(self):
+        fake_socket = MagicMock()
+        fake_socket.__enter__.return_value = fake_socket
+        with patch("ida_multi_mcp.idalib_manager.socket.socket", return_value=fake_socket):
+            assert _preferred_loopback_host() == "::1"
+        fake_socket.bind.assert_called_once_with(("::1", 0))
+
+    @patch("ida_multi_mcp.idalib_manager.sys.platform", "win32")
+    def test_windows_falls_back_when_ipv6_is_unavailable(self):
+        fake_socket = MagicMock()
+        fake_socket.__enter__.return_value = fake_socket
+        fake_socket.bind.side_effect = OSError("IPv6 disabled")
+        with patch("ida_multi_mcp.idalib_manager.socket.socket", return_value=fake_socket):
+            assert _preferred_loopback_host() == "127.0.0.1"
+
+    @patch("ida_multi_mcp.idalib_manager.sys.platform", "linux")
+    def test_non_windows_preserves_ipv4_default(self):
+        assert _preferred_loopback_host() == "127.0.0.1"
+
+
+class TestWorkerShutdownRequest:
+    @patch("ida_multi_mcp.idalib_manager.http.client.HTTPConnection")
+    def test_accepts_only_explicit_success_response(self, mock_connection):
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = b'{"jsonrpc":"2.0","result":{"accepted":true},"id":1}'
+        mock_connection.return_value.getresponse.return_value = response
+
+        assert _request_worker_shutdown("::1", 54321, "secret") is True
+        request_body = mock_connection.return_value.request.call_args.args[2]
+        assert '"ida-multi-mcp/shutdown"' in request_body
+        assert '"secret"' in request_body
+        mock_connection.return_value.close.assert_called_once()
+
 
 @pytest.fixture(autouse=True)
 def _mock_idalib_available():
     """Assume IDA Pro (idalib) is available in all manager tests."""
-    with patch("ida_multi_mcp.idalib_manager.is_idalib_available", return_value=True):
+    with (
+        patch("ida_multi_mcp.idalib_manager.is_idalib_available", return_value=True),
+        patch("ida_multi_mcp.idalib_manager.atexit.register"),
+    ):
         yield
 
 
@@ -100,6 +152,7 @@ class TestIdalibManagerSpawn:
         mgr.spawn_session(str(binary))
 
         assert mock_popen.call_args.kwargs["stdin"] == subprocess.DEVNULL
+        assert "IDA_MULTI_MCP_WORKER_SHUTDOWN_TOKEN" in mock_popen.call_args.kwargs["env"]
 
     @patch("ida_multi_mcp.idalib_manager.query_binary_metadata",
            return_value={"module": "test.exe", "path": "/tmp/test.exe.i64"})
@@ -125,6 +178,70 @@ class TestIdalibManagerSpawn:
         assert "error" not in result
         info = tmp_registry.get_instance(result["instance_id"])
         assert info["binary_name"] == "test.exe"
+
+    @patch("ida_multi_mcp.idalib_manager.time.sleep")
+    @patch(
+        "ida_multi_mcp.idalib_manager.query_binary_metadata",
+        side_effect=[None, {"module": "test.exe", "path": "/tmp/test.exe.i64"}],
+    )
+    @patch("ida_multi_mcp.idalib_manager.subprocess.Popen")
+    @patch("ida_multi_mcp.idalib_manager.ping_instance", return_value=True)
+    def test_spawn_on_idb_retries_transient_metadata_reset(
+        self, mock_ping, mock_popen, mock_meta, mock_sleep, tmp_path, tmp_registry,
+    ):
+        idb = tmp_path / "test.exe.i64"
+        idb.write_bytes(b"\x00" * 16)
+
+        mock_proc = MagicMock()
+        mock_proc.pid = 77778
+        mock_proc.poll.return_value = None
+        mock_proc.stderr.read.return_value = b""
+        mock_popen.return_value = mock_proc
+
+        mgr = IdalibManager(tmp_registry)
+        result = mgr.spawn_session(str(idb))
+
+        assert "error" not in result
+        assert mock_meta.call_count == 2
+        mock_sleep.assert_called_once()
+        info = tmp_registry.get_instance(result["instance_id"])
+        assert info["binary_name"] == "test.exe"
+
+    @patch("ida_multi_mcp.idalib_manager.IdalibManager._terminate_gracefully")
+    @patch("ida_multi_mcp.idalib_manager.time.sleep")
+    @patch("ida_multi_mcp.idalib_manager.query_binary_metadata", return_value=None)
+    @patch("ida_multi_mcp.idalib_manager.subprocess.Popen")
+    @patch("ida_multi_mcp.idalib_manager.ping_instance", return_value=True)
+    def test_spawn_on_idb_fails_closed_without_canonical_metadata(
+        self,
+        mock_ping,
+        mock_popen,
+        mock_meta,
+        mock_sleep,
+        mock_terminate,
+        tmp_path,
+        tmp_registry,
+    ):
+        idb = tmp_path / "renamed.i64"
+        idb.write_bytes(b"\x00" * 16)
+
+        mock_proc = MagicMock()
+        mock_proc.pid = 77779
+        mock_proc.poll.return_value = None
+        mock_proc.stderr.read.return_value = b""
+        mock_popen.return_value = mock_proc
+
+        mgr = IdalibManager(tmp_registry)
+        result = mgr.spawn_session(str(idb), host="127.0.0.1")
+
+        assert "canonical IDB module metadata was unavailable" in result["error"]
+        assert mock_meta.call_count == 4
+        assert mock_sleep.call_count == 3
+        assert mock_terminate.call_args.args == (mock_proc,)
+        assert mock_terminate.call_args.kwargs["host"] == "127.0.0.1"
+        assert mock_terminate.call_args.kwargs["port"] > 0
+        assert mock_terminate.call_args.kwargs["shutdown_token"]
+        assert tmp_registry.list_instances() == {}
 
     @patch("ida_multi_mcp.idalib_manager.subprocess.Popen")
     @patch("ida_multi_mcp.idalib_manager.ping_instance", return_value=False)
@@ -182,6 +299,24 @@ class TestIdalibManagerClose:
 
 
 class TestGracefulTermination:
+    @patch("ida_multi_mcp.idalib_manager._request_worker_shutdown", return_value=True)
+    def test_authenticated_rpc_allows_clean_exit(self, mock_shutdown):
+        proc = MagicMock()
+        proc.poll.return_value = None
+
+        IdalibManager._terminate_gracefully(
+            proc,
+            host="::1",
+            port=54321,
+            shutdown_token="secret",
+        )
+
+        mock_shutdown.assert_called_once_with("::1", 54321, "secret")
+        proc.wait.assert_called_once_with(timeout=60)
+        proc.send_signal.assert_not_called()
+        proc.terminate.assert_not_called()
+        proc.kill.assert_not_called()
+
     def test_skips_already_exited(self):
         proc = MagicMock()
         proc.poll.return_value = 0  # already exited

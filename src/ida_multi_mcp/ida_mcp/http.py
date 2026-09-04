@@ -173,7 +173,11 @@ class IdaMcpHttpRequestHandler(McpHttpRequestHandler):
         """
         origin = self.headers.get("Origin")
         port = self.server_port
-        if origin not in (f"http://127.0.0.1:{port}", f"http://localhost:{port}"):
+        if origin not in (
+            f"http://127.0.0.1:{port}",
+            f"http://localhost:{port}",
+            f"http://[::1]:{port}",
+        ):
             self.send_error(403, "Invalid Origin")
             return False
         return True
@@ -185,7 +189,11 @@ class IdaMcpHttpRequestHandler(McpHttpRequestHandler):
         """
         host = self.headers.get("Host")
         port = self.server_port
-        if host not in (f"127.0.0.1:{port}", f"localhost:{port}"):
+        if host not in (
+            f"127.0.0.1:{port}",
+            f"localhost:{port}",
+            f"[::1]:{port}",
+        ):
             self.send_error(403, "Invalid Host")
             return False
         return True

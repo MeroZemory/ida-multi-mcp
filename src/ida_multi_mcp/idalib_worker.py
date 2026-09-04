@@ -17,11 +17,55 @@ from __future__ import annotations
 import argparse
 import atexit
 import logging
+import os
+import secrets
 import signal
 import sys
+import threading
 from pathlib import Path
 
+
+def _http_origin(host: str, port: int) -> str:
+    display_host = f"[{host}]" if ":" in host else host
+    return f"http://{display_host}:{port}"
+
+
 logger = logging.getLogger("idalib-worker")
+_WORKER_SHUTDOWN_METHOD = "ida-multi-mcp/shutdown"
+_WORKER_SHUTDOWN_TOKEN_ENV = "IDA_MULTI_MCP_WORKER_SHUTDOWN_TOKEN"
+
+
+def _close_database_packed(idapro_module) -> bool:
+    """Persist one packed IDB and close without recreating loose work files.
+
+    Returns ``True`` when the explicit packed save succeeded. If it cannot be
+    completed, fall back to idapro's normal save-on-close behavior so edits are
+    not discarded merely to keep the directory tidy.
+    """
+    try:
+        import ida_loader
+
+        current_path = ida_loader.get_path(ida_loader.PATH_TYPE_IDB)
+        flags = ida_loader.DBFL_KILL | ida_loader.DBFL_COMP
+        if current_path and ida_loader.save_database(current_path, flags):
+            idapro_module.close_database(save=False)
+            return True
+    except Exception as exc:
+        logger.warning("Packed IDB save failed; using normal close: %s", exc)
+
+    idapro_module.close_database(save=True)
+    return False
+
+
+def _register_shutdown_rpc(mcp_server, expected_token: str) -> None:
+    """Register a manager-only RPC that lets the server exit cleanly."""
+    def _shutdown(token: str) -> dict:
+        if not secrets.compare_digest(token, expected_token):
+            raise PermissionError("invalid worker shutdown token")
+        threading.Thread(target=mcp_server.stop, daemon=True).start()
+        return {"accepted": True}
+
+    mcp_server.registry.method(_shutdown, name=_WORKER_SHUTDOWN_METHOD)
 
 
 def main() -> None:
@@ -81,7 +125,18 @@ def main() -> None:
     logger.info("Auto-analysis done.")
 
     # --- Import tool package (triggers @tool registration) -------------------
+    skipped_methods = {
+        value.strip()
+        for value in os.environ.get("IDA_MCP_LOG_SKIP_METHODS", "tools/call").split(",")
+        if value.strip()
+    }
+    skipped_methods.add(_WORKER_SHUTDOWN_METHOD)
+    os.environ["IDA_MCP_LOG_SKIP_METHODS"] = ",".join(sorted(skipped_methods))
     from ida_multi_mcp.ida_mcp import MCP_SERVER, MCP_UNSAFE  # noqa: E402
+
+    shutdown_token = os.environ.pop(_WORKER_SHUTDOWN_TOKEN_ENV, "")
+    if shutdown_token:
+        _register_shutdown_rpc(MCP_SERVER, shutdown_token)
 
     # Gate unsafe tools unless --unsafe.
     if not args.unsafe:
@@ -103,7 +158,7 @@ def main() -> None:
             return
         _closed = True
         try:
-            idapro.close_database()
+            _close_database_packed(idapro)
         except Exception:
             pass
 
@@ -127,10 +182,11 @@ def main() -> None:
     # serve it — the cache lives here, in rpc's module state. Without this the URL
     # keeps rpc's default (port 13337), which nothing listens on.
     from ida_multi_mcp.ida_mcp.rpc import set_download_base_url
-    set_download_base_url(f"http://{args.host}:{args.port}")
+    set_download_base_url(_http_origin(args.host, args.port))
 
     logger.info("Serving on %s:%d", args.host, args.port)
     MCP_SERVER.serve(host=args.host, port=args.port, background=False)
+    _close_db_once()
 
 
 if __name__ == "__main__":
