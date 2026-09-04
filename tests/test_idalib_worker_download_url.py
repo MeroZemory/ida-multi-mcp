@@ -139,3 +139,31 @@ def test_shutdown_rpc_requires_token_and_stops_server(monkeypatch):
 
     assert shutdown("expected") == {"accepted": True}
     thread.start.assert_called_once()
+
+
+def test_idapro_import_failure_reports_windows_application_control_block():
+    from ida_multi_mcp.idalib_worker import _idapro_import_failure_message
+
+    policy_error = OSError(4551, "An Application Control policy has blocked this file")
+    policy_error.winerror = 4551
+    failure = ImportError("Failed loading IDA library file")
+    failure.__cause__ = policy_error
+
+    message = _idapro_import_failure_message(failure)
+
+    assert "Windows Application Control" in message
+    assert "WinError 4551" in message
+    assert "idapro package is installed" in message
+    assert "reinstalling the Python package will not fix this" in message
+
+
+def test_idapro_import_failure_preserves_generic_import_detail(monkeypatch):
+    from ida_multi_mcp.idalib_worker import _idapro_import_failure_message
+
+    monkeypatch.setattr(sys, "executable", r"C:\Python\python.exe")
+
+    message = _idapro_import_failure_message(ImportError("No module named idapro"))
+
+    assert r"C:\Python\python.exe" in message
+    assert "point --idalib-python" in message
+    assert "No module named idapro" in message

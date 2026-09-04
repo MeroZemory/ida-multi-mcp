@@ -35,6 +35,29 @@ _WORKER_SHUTDOWN_METHOD = "ida-multi-mcp/shutdown"
 _WORKER_SHUTDOWN_TOKEN_ENV = "IDA_MULTI_MCP_WORKER_SHUTDOWN_TOKEN"
 
 
+def _idapro_import_failure_message(exc: ImportError) -> str:
+    """Classify an idapro import failure without hiding its real cause."""
+    current: BaseException | None = exc
+    while current is not None:
+        if getattr(current, "winerror", None) == 4551:
+            return (
+                "Windows Application Control blocked IDA's idalib.dll "
+                "(WinError 4551). The idapro package is installed but cannot "
+                "initialize under the active code-integrity policy. Use an "
+                "allowed/signed IDA build or connect a permitted GUI IDA "
+                "instance; reinstalling the Python package will not fix this."
+            )
+        current = current.__cause__ or current.__context__
+
+    detail = str(exc).strip()
+    suffix = f" Import error: {detail}" if detail else ""
+    return (
+        f"Failed to import the 'idapro' package in {sys.executable}. Install it "
+        "or point --idalib-python at the correct interpreter."
+        f"{suffix}"
+    )
+
+
 def _close_database_packed(idapro_module) -> bool:
     """Persist one packed IDB and close without recreating loose work files.
 
@@ -96,12 +119,8 @@ def main() -> None:
     # --- Initialize idalib (must happen before any ida_* import) -------------
     try:
         import idapro  # noqa: F401 — side-effect: initialises headless IDA
-    except ImportError:
-        logger.error(
-            "The 'idapro' package is not installed in this Python (%s). "
-            "Install it or point --idalib-python at the correct interpreter.",
-            sys.executable,
-        )
+    except ImportError as exc:
+        logger.error("%s", _idapro_import_failure_message(exc))
         sys.exit(1)
 
     # Suppress console noise unless verbose
