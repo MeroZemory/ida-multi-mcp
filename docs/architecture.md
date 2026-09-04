@@ -13,7 +13,9 @@ Location:
 Each registered instance includes:
 - **id** — 4-char instance identifier (k7m2, px3a, etc.)
 - **pid** — Process ID of the IDA Pro instance
-- **host** — Always 127.0.0.1 (localhost)
+- **host** — Loopback only: Windows managed workers prefer `::1` after a
+  successful bind probe and otherwise use `127.0.0.1`; all other platforms use
+  `127.0.0.1`
 - **port** — Dynamically assigned HTTP port
 - **binary_name** — Filename (malware.exe, driver.dll, etc.)
 - **binary_path** — Full path to binary
@@ -76,6 +78,7 @@ When you open a different binary in an IDA instance:
 
 | Decision | Rationale |
 |----------|-----------|
+| Loopback-only transport | Keeps workers local; Windows prefers IPv6 loopback when available to avoid IPv4 filter-stack resets, with IPv4 fallback |
 | Port 0 (auto-assigned) | Eliminates port conflicts, scales to unlimited instances |
 | 4-char base36 IDs | Short, readable, 1.68M combinations, easy to remember |
 | File-based registry | Simple, cross-process, debuggable, no database dependency |

@@ -12,6 +12,7 @@ import time
 import uuid
 import json
 import inspect
+import socket
 import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer, HTTPServer
@@ -21,6 +22,29 @@ from urllib.parse import urlparse, parse_qs
 from io import BufferedIOBase
 
 from .jsonrpc import JsonRpcRegistry, JsonRpcError, JsonRpcException, get_current_request_id, register_pending_request, unregister_pending_request, cancel_request
+
+
+class _IPv6HTTPServer(HTTPServer):
+    address_family = socket.AF_INET6
+
+
+class _IPv6ThreadingHTTPServer(ThreadingHTTPServer):
+    address_family = socket.AF_INET6
+
+
+def _http_server_class(host: str, background: bool):
+    if host == "::1":
+        return _IPv6ThreadingHTTPServer if background else _IPv6HTTPServer
+    return ThreadingHTTPServer if background else HTTPServer
+
+
+def _host_header_hostname(host_header: str) -> str | None:
+    if not host_header:
+        return ""
+    try:
+        return urlparse(f"//{host_header}").hostname
+    except ValueError:
+        return None
 
 class McpToolError(Exception):
     def __init__(self, message: str):
@@ -147,8 +171,7 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
     def _check_host_header(self) -> bool:
         """Validate Host header to prevent DNS rebinding attacks on all endpoints."""
         host_header = self.headers.get("Host", "")
-        # Strip port to get hostname
-        hostname = host_header.split(":")[0] if host_header else ""
+        hostname = _host_header_hostname(host_header)
         if hostname not in ("127.0.0.1", "localhost", "::1", ""):
             self.send_error(403, "Forbidden: invalid Host header")
             return False
@@ -361,7 +384,7 @@ class McpServer:
 
         # Create server with deferred binding
         assert issubclass(request_handler, McpHttpRequestHandler)
-        self._http_server = (ThreadingHTTPServer if background else HTTPServer)(
+        self._http_server = _http_server_class(host, background)(
             (host, port),
             request_handler,
             bind_and_activate=False
@@ -386,9 +409,10 @@ class McpServer:
         # Only start thread after successful bind
         self._running = True
 
+        url_host = f"[{host}]" if ":" in host else host
         print("[MCP] Server started:")
-        print(f"  Streamable HTTP: http://{host}:{port}/mcp")
-        print(f"  SSE: http://{host}:{port}/sse")
+        print(f"  Streamable HTTP: http://{url_host}:{port}/mcp")
+        print(f"  SSE: http://{url_host}:{port}/sse")
 
         def serve_forever():
             try:

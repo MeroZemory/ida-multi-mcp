@@ -8,7 +8,10 @@ Does NOT depend on ``idapro`` — purely manages subprocesses.
 from __future__ import annotations
 
 import atexit
+import http.client
+import json
 import os
+import secrets
 import socket
 import subprocess
 import sys
@@ -26,6 +29,16 @@ if TYPE_CHECKING:
 _READY_TIMEOUT = 120
 # Poll interval while waiting for worker readiness.
 _READY_POLL_INTERVAL = 0.5
+# A worker can answer the readiness ping a fraction of a second before its
+# resource endpoint is ready.  That matters for IDB inputs: their file name is
+# not necessarily the original module name, so registering the lexical `.i64`
+# or `.idb` name makes every later router identity check fail.
+_IDB_METADATA_QUERY_ATTEMPTS = 4
+_IDB_METADATA_QUERY_INTERVAL = 0.25
+_IDB_SUFFIXES = frozenset({".i64", ".idb"})
+_WORKER_SHUTDOWN_METHOD = "ida-multi-mcp/shutdown"
+_WORKER_SHUTDOWN_TOKEN_ENV = "IDA_MULTI_MCP_WORKER_SHUTDOWN_TOKEN"
+_WORKER_SHUTDOWN_TIMEOUT = 60
 
 # idalib library file name per platform.
 _IDALIB_NAMES = {
@@ -75,9 +88,60 @@ def _find_free_port(host: str = "127.0.0.1") -> int:
 
     There is a small TOCTOU race, but acceptable for localhost-only use.
     """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    family = socket.AF_INET6 if host == "::1" else socket.AF_INET
+    with socket.socket(family, socket.SOCK_STREAM) as s:
         s.bind((host, 0))
         return s.getsockname()[1]
+
+
+def _preferred_loopback_host() -> str:
+    """Return the most reliable local transport for a managed worker.
+
+    Some Windows network-filter stacks intermittently reset IPv4 loopback
+    connections even though the server successfully handled the request.
+    Prefer the independent IPv6 loopback path when it can actually bind; keep
+    the historical IPv4 endpoint everywhere else and when IPv6 is disabled.
+    """
+    if sys.platform != "win32":
+        return "127.0.0.1"
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as probe:
+            probe.bind(("::1", 0))
+    except OSError:
+        return "127.0.0.1"
+    return "::1"
+
+
+def _request_worker_shutdown(
+    host: str,
+    port: int,
+    token: str,
+    timeout: float = 10.0,
+) -> bool:
+    """Request one authenticated, graceful worker shutdown over loopback."""
+    connection = http.client.HTTPConnection(host, port, timeout=timeout)
+    body = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "method": _WORKER_SHUTDOWN_METHOD,
+            "params": {"token": token},
+            "id": 1,
+        }
+    )
+    try:
+        connection.request(
+            "POST",
+            "/mcp",
+            body,
+            {"Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        payload = json.loads(response.read().decode("utf-8"))
+        return response.status == 200 and payload.get("result", {}).get("accepted") is True
+    except Exception:
+        return False
+    finally:
+        connection.close()
 
 
 class IdalibManager:
@@ -98,6 +162,7 @@ class IdalibManager:
         self.python_executable = python_executable or sys.executable
         # instance_id -> subprocess.Popen
         self._processes: dict[str, subprocess.Popen] = {}
+        self._shutdown_tokens: dict[str, str] = {}
         # Register cleanup on interpreter shutdown
         atexit.register(self.close_all_sessions)
 
@@ -109,7 +174,7 @@ class IdalibManager:
         self,
         input_path: str,
         *,
-        host: str = "127.0.0.1",
+        host: str | None = None,
         timeout: int = _READY_TIMEOUT,
         unsafe: bool = False,
     ) -> dict:
@@ -131,12 +196,14 @@ class IdalibManager:
         if not os.path.isfile(resolved_path):
             return {"error": f"File not found: {input_path}"}
 
-        port = _find_free_port(host)
+        selected_host = host or _preferred_loopback_host()
+        port = _find_free_port(selected_host)
 
+        shutdown_token = secrets.token_urlsafe(32)
         cmd = [
             self.python_executable,
             "-m", "ida_multi_mcp.idalib_worker",
-            "--host", host,
+            "--host", selected_host,
             "--port", str(port),
         ]
         if unsafe:
@@ -159,12 +226,15 @@ class IdalibManager:
             # stdout=DEVNULL discards IDA's analysis output.
             # stderr=PIPE is drained by a background thread (see below) to
             # prevent pipe buffer deadlock.
+            worker_env = os.environ.copy()
+            worker_env[_WORKER_SHUTDOWN_TOKEN_ENV] = shutdown_token
             proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 creationflags=creation_flags,
+                env=worker_env,
             )
         except FileNotFoundError:
             return {
@@ -193,14 +263,15 @@ class IdalibManager:
         stderr_thread.start()
 
         # Wait for the worker to become ready.
-        if not self._wait_for_ready(host, port, proc, timeout):
+        if not self._wait_for_ready(selected_host, port, proc, timeout):
             # Worker didn't come up — terminate first so its dying stderr is
             # captured by the drain thread, then collect it for diagnostics.
-            try:
-                proc.terminate()
-                proc.wait(timeout=5)
-            except Exception:
-                proc.kill()
+            self._terminate_gracefully(
+                proc,
+                host=selected_host,
+                port=port,
+                shutdown_token=shutdown_token,
+            )
             stderr_thread.join(timeout=1)
             stderr_text = b"".join(stderr_chunks).decode(errors="replace")[-500:]
             return {
@@ -211,25 +282,71 @@ class IdalibManager:
             }
 
         # Ask the worker for its canonical module name so the registry matches
-        # what the metadata resource reports. Falls back to basename when the
-        # input was an IDB (e.g. foo.exe.i64 → module is "foo.exe") or query fails.
-        metadata = query_binary_metadata(host, port, timeout=5.0)
-        module_name = (metadata or {}).get("module") if metadata else None
+        # what the metadata resource reports. A newly listening worker can
+        # transiently reset this first resource request. Retry only for IDB
+        # inputs, where falling back to the lexical database name would create
+        # a permanently unroutable instance (foo.exe.i64 != foo.exe).
+        is_idb_input = os.path.splitext(resolved_path)[1].casefold() in _IDB_SUFFIXES
+        metadata = None
+        module_name = None
+        attempts = _IDB_METADATA_QUERY_ATTEMPTS if is_idb_input else 1
+        attempts_made = 0
+        worker_returncode = None
+        for attempt in range(attempts):
+            attempts_made = attempt + 1
+            metadata = query_binary_metadata(selected_host, port, timeout=5.0)
+            candidate = (metadata or {}).get("module") if metadata else None
+            if isinstance(candidate, str) and candidate.strip():
+                module_name = candidate.strip()
+                break
+            worker_returncode = proc.poll()
+            if worker_returncode is not None:
+                break
+            if attempt + 1 < attempts:
+                time.sleep(_IDB_METADATA_QUERY_INTERVAL)
+
+        if is_idb_input and module_name is None:
+            self._terminate_gracefully(
+                proc,
+                host=selected_host,
+                port=port,
+                shutdown_token=shutdown_token,
+            )
+            stderr_thread.join(timeout=1)
+            stderr_text = b"".join(stderr_chunks).decode(errors="replace")[-500:]
+            if worker_returncode is not None:
+                failure_detail = (
+                    f" after {attempts_made} attempt(s); worker exited with code "
+                    f"{worker_returncode}"
+                )
+                if stderr_text:
+                    failure_detail += f". Last stderr: {stderr_text}"
+            else:
+                failure_detail = f" after {attempts_made} attempt(s)"
+            return {
+                "error": (
+                    "idalib worker became ready, but canonical IDB module metadata "
+                    f"was unavailable{failure_detail}; worker stopped "
+                    "without registering an ambiguous instance"
+                )
+            }
+
         binary_name = module_name or os.path.basename(resolved_path)
         instance_id = self.registry.register(
             pid=proc.pid,
             port=port,
             idb_path=resolved_path,
-            host=host,
+            host=selected_host,
             binary_name=binary_name,
             binary_path=resolved_path,
             type="idalib",
         )
 
         self._processes[instance_id] = proc
+        self._shutdown_tokens[instance_id] = shutdown_token
         return {
             "instance_id": instance_id,
-            "host": host,
+            "host": selected_host,
             "port": port,
             "pid": proc.pid,
             "binary": binary_name,
@@ -252,14 +369,28 @@ class IdalibManager:
 
         # Terminate the subprocess, preferring a graceful shutdown so the
         # worker can close its IDB cleanly.
-        self._terminate_gracefully(proc)
+        info = self.registry.get_instance(instance_id)
+        token = self._shutdown_tokens.get(instance_id)
+        self._terminate_gracefully(
+            proc,
+            host=info.get("host") if info else None,
+            port=info.get("port") if info else None,
+            shutdown_token=token,
+        )
 
         del self._processes[instance_id]
+        self._shutdown_tokens.pop(instance_id, None)
         self.registry.unregister(instance_id)
         return {"ok": True}
 
     @staticmethod
-    def _terminate_gracefully(proc: subprocess.Popen) -> None:
+    def _terminate_gracefully(
+        proc: subprocess.Popen,
+        *,
+        host: str | None = None,
+        port: int | None = None,
+        shutdown_token: str | None = None,
+    ) -> None:
         """Ask the worker to shut down cleanly, then force-kill if it lingers.
 
         On Windows, ``proc.terminate()`` maps to TerminateProcess, which the
@@ -269,6 +400,19 @@ class IdalibManager:
         """
         if proc.poll() is not None:
             return
+
+        # Preferred path: an authenticated loopback request makes the HTTP
+        # server return normally, so the worker can pack and close its IDB.
+        # Windows CREATE_NO_WINDOW workers cannot reliably receive CTRL_BREAK.
+        if host and port and shutdown_token:
+            requested = _request_worker_shutdown(host, port, shutdown_token)
+            try:
+                proc.wait(timeout=_WORKER_SHUTDOWN_TIMEOUT if requested else 5)
+                return
+            except subprocess.TimeoutExpired:
+                pass
+            except Exception:
+                pass
 
         # Step 1: graceful request (CTRL_BREAK on Windows, SIGTERM on POSIX).
         try:
@@ -319,6 +463,7 @@ class IdalibManager:
             if not alive:
                 # Clean up dead workers.
                 del self._processes[iid]
+                self._shutdown_tokens.pop(iid, None)
                 self.registry.unregister(iid)
                 continue
             result.append({
