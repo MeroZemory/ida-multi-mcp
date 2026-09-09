@@ -65,6 +65,41 @@ def _import_ida_mcp_zeromcp():
     return McpServer
 
 
+class _NoopHttpServer:
+    def __init__(self, *_args, **_kwargs):
+        self.allow_reuse_address = False
+        self.allow_reuse_port = False
+
+    def server_bind(self):
+        pass
+
+    def server_activate(self):
+        pass
+
+    def server_close(self):
+        pass
+
+    def serve_forever(self):
+        pass
+
+
+@pytest.mark.parametrize("implementation", ["vendor", "ida_mcp"])
+def test_ipv6_advertised_urls_are_bracketed(implementation, monkeypatch, capsys):
+    if implementation == "vendor":
+        McpServer = VendorMcpServer
+    else:
+        McpServer = _import_ida_mcp_zeromcp()
+    module = sys.modules[McpServer.__module__]
+    monkeypatch.setattr(module, "_http_server_class", lambda *_args: _NoopHttpServer)
+
+    McpServer("test").serve("::1", 43210, background=False)
+
+    captured = capsys.readouterr()
+    advertised = captured.out + captured.err
+    assert "http://[::1]:43210/mcp" in advertised
+    assert "http://[::1]:43210/sse" in advertised
+
+
 class TestNotificationsInitializedParity:
     def test_vendor_registers_handler(self):
         srv = VendorMcpServer("test")
