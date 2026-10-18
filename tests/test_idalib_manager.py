@@ -79,6 +79,10 @@ def _mock_idalib_available():
     with (
         patch("ida_multi_mcp.idalib_manager.is_idalib_available", return_value=True),
         patch("ida_multi_mcp.idalib_manager.atexit.register"),
+        patch("ida_multi_mcp.idalib_manager.query_binary_identity",
+              return_value={"module": "test.bin", "input_fingerprint": {
+                  "algorithm": "sha256", "digest": "ab" * 32,
+              }}),
     ):
         yield
 
@@ -132,6 +136,7 @@ class TestIdalibManagerSpawn:
         info = tmp_registry.get_instance(result["instance_id"])
         assert info is not None
         assert info["type"] == "idalib"
+        assert info["input_fingerprint"] == {"algorithm": "sha256", "digest": "ab" * 32}
 
     @patch("ida_multi_mcp.idalib_manager.subprocess.Popen")
     @patch("ida_multi_mcp.idalib_manager.ping_instance")
@@ -154,7 +159,7 @@ class TestIdalibManagerSpawn:
         assert mock_popen.call_args.kwargs["stdin"] == subprocess.DEVNULL
         assert "IDA_MULTI_MCP_WORKER_SHUTDOWN_TOKEN" in mock_popen.call_args.kwargs["env"]
 
-    @patch("ida_multi_mcp.idalib_manager.query_binary_metadata",
+    @patch("ida_multi_mcp.idalib_manager.query_binary_identity",
            return_value={"module": "test.exe", "path": "/tmp/test.exe.i64"})
     @patch("ida_multi_mcp.idalib_manager.subprocess.Popen")
     @patch("ida_multi_mcp.idalib_manager.ping_instance", return_value=True)
@@ -181,7 +186,7 @@ class TestIdalibManagerSpawn:
 
     @patch("ida_multi_mcp.idalib_manager.time.sleep")
     @patch(
-        "ida_multi_mcp.idalib_manager.query_binary_metadata",
+        "ida_multi_mcp.idalib_manager.query_binary_identity",
         side_effect=[None, {"module": "test.exe", "path": "/tmp/test.exe.i64"}],
     )
     @patch("ida_multi_mcp.idalib_manager.subprocess.Popen")
@@ -209,7 +214,7 @@ class TestIdalibManagerSpawn:
 
     @patch("ida_multi_mcp.idalib_manager.IdalibManager._terminate_gracefully")
     @patch("ida_multi_mcp.idalib_manager.time.sleep")
-    @patch("ida_multi_mcp.idalib_manager.query_binary_metadata", return_value=None)
+    @patch("ida_multi_mcp.idalib_manager.query_binary_identity", return_value=None)
     @patch("ida_multi_mcp.idalib_manager.subprocess.Popen")
     @patch("ida_multi_mcp.idalib_manager.ping_instance", return_value=True)
     def test_spawn_on_idb_fails_closed_without_canonical_metadata(
@@ -244,7 +249,7 @@ class TestIdalibManagerSpawn:
         assert tmp_registry.list_instances() == {}
 
     @patch("ida_multi_mcp.idalib_manager.IdalibManager._wait_for_ready", return_value=True)
-    @patch("ida_multi_mcp.idalib_manager.query_binary_metadata", return_value=None)
+    @patch("ida_multi_mcp.idalib_manager.query_binary_identity", return_value=None)
     @patch("ida_multi_mcp.idalib_manager.subprocess.Popen")
     def test_spawn_on_idb_reports_early_metadata_worker_exit(
         self,
@@ -341,7 +346,7 @@ class TestGracefulTermination:
             shutdown_token="secret",
         )
 
-        mock_shutdown.assert_called_once_with("::1", 54321, "secret")
+        mock_shutdown.assert_called_once_with("::1", 54321, "secret", timeout=300.0)
         proc.wait.assert_called_once_with(timeout=60)
         proc.send_signal.assert_not_called()
         proc.terminate.assert_not_called()

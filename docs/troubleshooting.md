@@ -1,8 +1,21 @@
 # Troubleshooting
 
+Last updated: 2026-09-19
+
 [← back to README](../README.md)
 
 ## Troubleshooting
+
+<details>
+<summary>"input identity changed or could not be verified" after updating</summary>
+
+Routing now checks the original-input digest stored in the IDB, as specified in [Routing Contract v2](.ssot/contracts/routing_contract.md#loaded-input-identity). Old registrations and older running plugins cannot supply that identity.
+
+Update the installed package and restart the GUI IDA process to load the updated plugin and register the database again, or close and reopen a managed idalib session. Call `list_instances()` and use the new `instance_id`. If the worker is busy, retry after its current operation completes. Databases without a stored SHA-256 or MD5 digest cannot be routed; reload from the original input to create a database with an input digest. Do not bypass the check with a filename-derived digest.
+
+The guard identifies the original loaded input; it does not detect edits made inside the IDB. Implementation: [router.py](../src/ida_multi_mcp/router.py) and [identity.py](../src/ida_multi_mcp/identity.py).
+
+</details>
 
 <details>
 <summary>"No IDA instances registered"</summary>
@@ -60,6 +73,27 @@ This usually means IDA's Python cannot find the package due to a **Python versio
    - macOS/Linux: `~/.idapro/plugins/`
    - Windows: `%APPDATA%\Hex-Rays\IDA Pro\plugins\`
 4. Restart IDA Pro
+
+</details>
+
+<details>
+<summary>MCP handshake fails on Windows: "connection closed: initialize response"</summary>
+
+This happens when the MCP client starts Python in UTF-8 mode (`PYTHONUTF8=1`, Grok and some Codex/Claude setups) on a non-English Windows console.
+
+`ida-multi-mcp` scans for live IDA GUI processes with `tasklist` / `netstat` **before** answering MCP `initialize`. Those utilities emit OEM/GBK. With `text=True` and UTF-8 decoding, CPython's stdout reader raises `UnicodeDecodeError`, `check_output` returns `None`, and `out.strip()` crashes the process.
+
+Current `ida-multi-mcp` decodes those commands as OEM with replacement and treats discovery failures as "no GUI instances" so headless `idalib_*` tools still start.
+
+The Windows discovery implementation is in [`src/ida_multi_mcp/health.py`](../src/ida_multi_mcp/health.py).
+
+If you are on an older install:
+
+```bash
+pip install -U git+https://github.com/MeroZemory/ida-multi-mcp.git
+```
+
+Then restart the MCP client. You do **not** need IDA GUI running for the stdio server to handshake.
 
 </details>
 

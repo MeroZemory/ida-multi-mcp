@@ -83,6 +83,7 @@ def get_binary_metadata():
     try:
         import idaapi
         import idc
+        from ida_multi_mcp.identity import read_input_fingerprint
 
         binary_path = idaapi.get_input_file_path() or "unknown"
         # idaapi may return a path from another OS (e.g. Windows path on macOS).
@@ -124,7 +125,8 @@ def get_binary_metadata():
             "binary_name": binary_name,
             "binary_path": binary_path,
             "idb_path": idb_path,
-            "arch": arch
+            "arch": arch,
+            "input_fingerprint": read_input_fingerprint(),
         }
     except Exception as e:
         print(f"[ida-multi-mcp] Failed to get binary metadata: {e}")

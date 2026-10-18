@@ -165,6 +165,7 @@ class IdaMultiMcpPlugin(idaapi.plugin_t):
                     idb_path=metadata["idb_path"],
                     binary_path=metadata["binary_path"],
                     binary_name=metadata["binary_name"],
+                    input_fingerprint=metadata.get("input_fingerprint"),
                     arch=metadata["arch"],
                     host="127.0.0.1",
                 )

@@ -15,6 +15,7 @@ import idautils
 import idc
 
 from . import compat
+from ..identity import read_input_fingerprint
 from .rpc import resource
 from .sync import idasync
 from .utils import (
@@ -30,6 +31,16 @@ from .utils import (
 # ============================================================================
 # Core IDB State
 # ============================================================================
+
+
+@resource("ida://idb/identity")
+@idasync
+def idb_identity_resource() -> dict:
+   """Lightweight identity of the loaded input, independent of on-disk changes."""
+   return {
+      "module": ida_nalt.get_root_filename(),
+      "input_fingerprint": read_input_fingerprint(),
+   }
 
 
 @resource("ida://idb/metadata")

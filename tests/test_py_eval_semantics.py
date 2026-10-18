@@ -1,5 +1,6 @@
 import importlib.util
 import sys
+import tempfile
 import types
 import unittest
 from contextlib import contextmanager
@@ -129,28 +130,91 @@ class PyEvalSemanticsTest(unittest.TestCase):
             with self.assertRaises(ImportError):
                 api_python._lazy_ida_import("os", {}, {}, (), 0)
 
-    def test_lazy_import_returns_none_for_missing_ida_module(self):
-        """A non-existent IDA module should bind None (not crash), and the
-        warning should go to stderr rather than ida_kernwin.warning so the
-        function works outside the IDA GUI."""
+    def test_optional_import_returns_none_without_repeated_warnings(self):
+        """Missing optional prebindings bind None without noisy warnings."""
         with _loaded_api_python() as api_python:
-            # Remove a module so _lazy_ida_import hits ImportError.
+            # Remove a module so the optional prebinding hits ImportError.
             saved_mod = sys.modules.pop("ida_fpro", None)
             try:
-                import io as _io
-                old_stderr = sys.stderr
-                sys.stderr = _io.StringIO()
-                try:
-                    result = api_python._lazy_ida_import("ida_fpro", {}, {}, (), 0)
-                finally:
-                    captured = sys.stderr.getvalue()
-                    sys.stderr = old_stderr
+                result = api_python.py_eval("result = ida_fpro is None")
+                repeated = api_python.py_eval("result = ida_fpro is None")
             finally:
                 if saved_mod is not None:
                     sys.modules["ida_fpro"] = saved_mod
 
-            self.assertIsNone(result)
-            self.assertIn("ida_fpro", captured)
+            self.assertEqual(result["result"], "True")
+            self.assertEqual(repeated["result"], "True")
+            self.assertEqual(result["stderr"], "")
+            self.assertEqual(repeated["stderr"], "")
+
+    def test_lazy_import_preserves_dotted_and_fromlist_imports_across_evals(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            package_dir = Path(temp_dir) / "ida_import_order"
+            package_dir.mkdir()
+            (package_dir / "__init__.py").write_text("", encoding="utf-8")
+            (package_dir / "child.py").write_text("MARKER = 'child'\n", encoding="utf-8")
+            sys.path.insert(0, temp_dir)
+            try:
+                dotted = "import ida_import_order.child\nresult = ida_import_order.child.MARKER"
+                fromlist = "from ida_import_order.child import MARKER\nresult = MARKER"
+                for codes in ((dotted, fromlist), (fromlist, dotted)):
+                    with _loaded_api_python() as api_python:
+                        self.assertNotIn("ida_import_order.child", sys.modules)
+                        for code in codes:
+                            result = api_python.py_eval(code)
+                            self.assertEqual(result["result"], "child")
+                            self.assertEqual(result["stderr"], "")
+                    sys.modules.pop("ida_import_order.child", None)
+                    sys.modules.pop("ida_import_order", None)
+            finally:
+                sys.path.remove(temp_dir)
+                sys.modules.pop("ida_import_order.child", None)
+                sys.modules.pop("ida_import_order", None)
+
+    def test_lazy_import_imports_child_when_parent_is_prebound(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            package_dir = Path(temp_dir) / "ida_gdl"
+            package_dir.mkdir()
+            (package_dir / "__init__.py").write_text("", encoding="utf-8")
+            (package_dir / "child.py").write_text("MARKER = 'child'\n", encoding="utf-8")
+            sys.path.insert(0, temp_dir)
+            try:
+                with _loaded_api_python() as api_python:
+                    sys.modules.pop("ida_gdl", None)
+                    parent = __import__("ida_gdl")
+                    self.assertNotIn("ida_gdl.child", sys.modules)
+                    self.assertFalse(hasattr(parent, "child"))
+                    result = api_python.py_eval(
+                        "from ida_gdl import child\n"
+                        "result = child.MARKER"
+                    )
+                    self.assertEqual(result["result"], "child")
+                    self.assertEqual(result["stderr"], "")
+            finally:
+                sys.path.remove(temp_dir)
+                sys.modules.pop("ida_gdl.child", None)
+                sys.modules.pop("ida_gdl", None)
+
+    def test_lazy_import_retries_explicit_import_after_missing_prebind(self):
+        with _loaded_api_python() as api_python:
+            saved_module = sys.modules.pop("ida_fpro", None)
+            try:
+                prebound = api_python.py_eval("result = ida_fpro is None")
+                self.assertEqual(prebound["result"], "True")
+                self.assertEqual(prebound["stderr"], "")
+
+                available = _module("ida_fpro", MARKER="available")
+                sys.modules["ida_fpro"] = available
+                imported = api_python.py_eval(
+                    "import ida_fpro\n"
+                    "result = ida_fpro.MARKER"
+                )
+                self.assertEqual(imported["result"], "available")
+                self.assertNotIn("could not be imported", imported["stderr"])
+            finally:
+                sys.modules.pop("ida_fpro", None)
+                if saved_module is not None:
+                    sys.modules["ida_fpro"] = saved_module
 
     def test_py_eval_supports_multi_module_import(self):
         with _loaded_api_python() as api_python:

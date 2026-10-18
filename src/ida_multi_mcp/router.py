@@ -11,7 +11,8 @@ import time
 from typing import Any
 
 from .registry import InstanceRegistry, ALLOWED_HOSTS
-from .health import query_binary_metadata
+from .health import query_binary_identity
+from .identity import normalize_fingerprint
 
 
 class InstanceRouter:
@@ -27,7 +28,7 @@ class InstanceRouter:
             registry: The instance registry
         """
         self.registry = registry
-        self._binary_path_cache: dict[str, tuple[str | None, float]] = {}
+        self._binary_path_cache: dict[str, tuple[tuple, dict, float]] = {}
         self._cache_lock = threading.Lock()
         self._cache_timeout = 5.0  # seconds
 
@@ -79,8 +80,12 @@ class InstanceRouter:
         # Verify binary path (fallback check)
         if not self._verify_binary_path(instance_id, instance_info):
             return {
-                "error": f"Instance '{instance_id}' binary path changed. Instance may be stale.",
-                "hint": "Use list_instances() to see current instances."
+                "error": f"Instance '{instance_id}' input identity changed or could not be verified.",
+                "hint": (
+                    "Retry if the instance is busy. Otherwise update the package, restart IDA, "
+                    "and re-register the database, or reopen the managed session. "
+                    "An IDB-stored SHA-256 or MD5 input digest is required."
+                ),
             }
 
         # Remove instance_id from arguments before forwarding to IDA
@@ -94,60 +99,49 @@ class InstanceRouter:
         return self._send_request(instance_info, method, forward_params)
 
     def _verify_binary_path(self, instance_id: str, instance_info: dict) -> bool:
-        """Verify instance is still analyzing the same binary.
+        """Compare registration identity with the loaded input; unknown is unsafe.
 
-        Compares by binary name (module) since the metadata resource returns
-        the IDB path, not the original binary path.
-        Uses 5-second cache to avoid excessive queries.
-
-        Args:
-            instance_id: Instance ID
-            instance_info: Instance metadata
-
-        Returns:
-            True if binary matches or cannot be verified
+        Successful identity reads are cached for five seconds. A cache entry is
+        bound to the registration and endpoint, never just the short instance ID.
         """
-        now = time.time()
+        expected = normalize_fingerprint(instance_info.get("input_fingerprint"))
+        if expected is None:
+            return False
+        now = time.monotonic()
 
         def _normalize_binary_name(name: str | None) -> str | None:
-            if not name:
+            if not isinstance(name, str) or not name:
                 return None
             # Normalize both Windows and POSIX-like paths, then compare case-insensitively.
             normalized = os.path.basename(name.replace("\\", "/")).strip()
             return normalized.casefold() if normalized else None
 
-        # Check cache. Held only around the dict access — the metadata query
-        # below is a blocking HTTP call and must not serialize other instances'
-        # requests now that dispatch runs concurrently. A racing miss just costs
-        # a duplicate query, which is harmless.
+        signature = (
+            instance_info.get("host", "127.0.0.1"), instance_info.get("port"),
+            instance_info.get("pid"), instance_info.get("registered_at"),
+            instance_info.get("idb_path"), instance_info.get("binary_name"),
+            expected["algorithm"], expected["digest"],
+        )
         with self._cache_lock:
             entry = self._binary_path_cache.get(instance_id)
-        if entry is not None:
-            cached_name, cached_time = entry
-            if now - cached_time < self._cache_timeout:
-                # Benefit of doubt when the last query couldn't resolve a name.
-                if cached_name is None:
-                    return True
-                return cached_name == _normalize_binary_name(instance_info.get("binary_name"))
-
-        # Query fresh binary metadata
-        host = instance_info.get("host", "127.0.0.1")
-        port = instance_info.get("port")
-        metadata = query_binary_metadata(host, port)
-
-        # Extract binary name (module) from metadata
-        current_name = _normalize_binary_name(metadata.get("module") if metadata else None)
-
-        # Update cache
-        with self._cache_lock:
-            self._binary_path_cache[instance_id] = (current_name, now)
-
-        # If we couldn't query, assume it's valid (benefit of doubt)
-        if current_name is None:
-            return True
-
-        # Compare by binary name
-        return current_name == _normalize_binary_name(instance_info.get("binary_name"))
+        if entry and entry[0] == signature and now - entry[2] < self._cache_timeout:
+            identity = entry[1]
+        else:
+            identity = query_binary_identity(signature[0], signature[1])
+            if not isinstance(identity, dict):
+                return False
+            # Do not cache failures: a busy endpoint should be retryable immediately.
+            if normalize_fingerprint(identity.get("input_fingerprint")) is None:
+                return False
+            with self._cache_lock:
+                self._binary_path_cache[instance_id] = (signature, identity, now)
+        current = normalize_fingerprint(identity.get("input_fingerprint"))
+        current_name = _normalize_binary_name(identity.get("module"))
+        return (
+            current == expected
+            and current_name is not None
+            and current_name == _normalize_binary_name(instance_info.get("binary_name"))
+        )
 
     def _send_request(self, instance_info: dict, method: str, params: dict) -> dict[str, Any]:
         """Send HTTP request to IDA instance.

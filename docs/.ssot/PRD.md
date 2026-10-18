@@ -1,6 +1,6 @@
 # Product Requirements Document (PRD)
 
-Last updated: 2026-02-17
+Last updated: 2026-09-19
 Status: Active
 Change class: B (scope/architecture)
 
@@ -10,6 +10,7 @@ Change class: B (scope/architecture)
 ## 2. Core Requirements
 - Explicit per-instance routing: every IDA tool call requires `instance_id`.
 - Multi-instance operation: supports concurrent analysis of multiple binaries.
+- Loaded-input identity verification follows [Routing Contract v2](contracts/routing_contract.md#loaded-input-identity), implemented by `src/ida_multi_mcp/router.py` and `src/ida_multi_mcp/identity.py`.
 - Tool surface stability: maintains tool visibility via static + dynamic schema federation.
 - Install/operational practicality: supports cross-platform plugin installation and MCP client configuration automation.
 

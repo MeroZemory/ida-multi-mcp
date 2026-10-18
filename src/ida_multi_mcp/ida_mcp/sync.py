@@ -8,7 +8,6 @@ import time
 from enum import IntEnum
 import idaapi
 import ida_kernwin
-import idc
 from .rpc import McpToolError
 from .zeromcp.jsonrpc import get_current_cancel_event, RequestCancelledError
 
@@ -100,15 +99,11 @@ def _sync_wrapper(ff):
             return
 
         call_stack.put((ff.__name__))
-        # Batch mode must be toggled on the IDA main thread. Doing it in
-        # sync_wrapper() ran idc.batch() on the requesting HTTP worker thread.
-        old_batch = idc.batch(1)
         try:
             res_container.put(ff())
         except Exception as x:
             res_container.put(x)
         finally:
-            idc.batch(old_batch)
             # Non-blocking: a reentrant @idasync invoked synchronously inside
             # ff() may have already popped our entry. A blocking get() here
             # would freeze the IDA main thread and hang every later call.
@@ -135,8 +130,9 @@ def _normalize_timeout(value: object) -> float | None:
 def sync_wrapper(ff, timeout_override: float | None = None):
     """Wrapper to enable timeout and cancellation during IDA synchronization.
 
-    Batch mode is handled inside _sync_wrapper so that idc.batch() runs on the
-    IDA main thread rather than on the calling HTTP worker thread.
+    Do not enable IDA's process-global batch mode here. Batch mode suppresses
+    dialogs and selects their default actions, so using it for MCP calls can
+    auto-accept unrelated dialogs in the interactive GUI.
     """
     # Capture cancel event from thread-local before execute_sync
     cancel_event = get_current_cancel_event()

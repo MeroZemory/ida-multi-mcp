@@ -20,7 +20,7 @@ import time
 from collections import deque
 from typing import TYPE_CHECKING
 
-from .health import is_process_alive, ping_instance, query_binary_metadata
+from .health import is_process_alive, ping_instance, query_binary_identity
 
 if TYPE_CHECKING:
     from .registry import InstanceRegistry
@@ -33,12 +33,16 @@ _READY_POLL_INTERVAL = 0.5
 # resource endpoint is ready.  That matters for IDB inputs: their file name is
 # not necessarily the original module name, so registering the lexical `.i64`
 # or `.idb` name makes every later router identity check fail.
-_IDB_METADATA_QUERY_ATTEMPTS = 4
-_IDB_METADATA_QUERY_INTERVAL = 0.25
+_IDB_IDENTITY_QUERY_ATTEMPTS = 4
+_IDB_IDENTITY_QUERY_INTERVAL = 0.25
+# One shared budget for a healthy identity response and transient retries.
+_IDENTITY_QUERY_TIMEOUT = 30.0
 _IDB_SUFFIXES = frozenset({".i64", ".idb"})
 _WORKER_SHUTDOWN_METHOD = "ida-multi-mcp/shutdown"
 _WORKER_SHUTDOWN_TOKEN_ENV = "IDA_MULTI_MCP_WORKER_SHUTDOWN_TOKEN"
 _WORKER_SHUTDOWN_TIMEOUT = 60
+# Matches the supported in-flight IDA request budget in router.py.
+_WORKER_REQUEST_DRAIN_TIMEOUT = 300.0
 
 # idalib library file name per platform.
 _IDALIB_NAMES = {
@@ -281,21 +285,23 @@ class IdalibManager:
                 )
             }
 
-        # Ask the worker for its canonical module name so the registry matches
-        # what the metadata resource reports. A newly listening worker can
-        # transiently reset this first resource request. Retry only for IDB
-        # inputs, where falling back to the lexical database name would create
-        # a permanently unroutable instance (foo.exe.i64 != foo.exe).
+        # Read the lightweight IDB-stored identity from upstream #45. The
+        # metadata resource hashes the on-disk input and can remain busy after
+        # a client timeout; never queue repeated expensive metadata requests.
         is_idb_input = os.path.splitext(resolved_path)[1].casefold() in _IDB_SUFFIXES
-        metadata = None
+        identity = None
         module_name = None
-        attempts = _IDB_METADATA_QUERY_ATTEMPTS if is_idb_input else 1
+        attempts = _IDB_IDENTITY_QUERY_ATTEMPTS if is_idb_input else 1
+        deadline = time.monotonic() + _IDENTITY_QUERY_TIMEOUT
         attempts_made = 0
         worker_returncode = None
         for attempt in range(attempts):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
             attempts_made = attempt + 1
-            metadata = query_binary_metadata(selected_host, port, timeout=5.0)
-            candidate = (metadata or {}).get("module") if metadata else None
+            identity = query_binary_identity(selected_host, port, timeout=remaining)
+            candidate = (identity or {}).get("module")
             if isinstance(candidate, str) and candidate.strip():
                 module_name = candidate.strip()
                 break
@@ -303,7 +309,8 @@ class IdalibManager:
             if worker_returncode is not None:
                 break
             if attempt + 1 < attempts:
-                time.sleep(_IDB_METADATA_QUERY_INTERVAL)
+                time.sleep(min(_IDB_IDENTITY_QUERY_INTERVAL,
+                               max(0.0, deadline - time.monotonic())))
 
         if is_idb_input and module_name is None:
             self._terminate_gracefully(
@@ -339,6 +346,7 @@ class IdalibManager:
             host=selected_host,
             binary_name=binary_name,
             binary_path=resolved_path,
+            input_fingerprint=(identity or {}).get("input_fingerprint"),
             type="idalib",
         )
 
@@ -405,9 +413,18 @@ class IdalibManager:
         # server return normally, so the worker can pack and close its IDB.
         # Windows CREATE_NO_WINDOW workers cannot reliably receive CTRL_BREAK.
         if host and port and shutdown_token:
-            requested = _request_worker_shutdown(host, port, shutdown_token)
+            # A reset/timeout is an unknown delivery outcome: the request may
+            # be queued behind an active IDA call or already packing the IDB.
+            # Keep one bounded drain+save deadline rather than killing after
+            # five seconds or replaying the mutating shutdown request.
+            deadline = time.monotonic() + _WORKER_REQUEST_DRAIN_TIMEOUT + _WORKER_SHUTDOWN_TIMEOUT
+            requested = _request_worker_shutdown(
+                host, port, shutdown_token, timeout=_WORKER_REQUEST_DRAIN_TIMEOUT,
+            )
+            remaining = max(0.0, deadline - time.monotonic())
+            wait_timeout = min(_WORKER_SHUTDOWN_TIMEOUT, remaining) if requested else remaining
             try:
-                proc.wait(timeout=_WORKER_SHUTDOWN_TIMEOUT if requested else 5)
+                proc.wait(timeout=wait_timeout)
                 return
             except subprocess.TimeoutExpired:
                 pass
@@ -487,6 +504,7 @@ class IdalibManager:
         alive = is_process_alive(proc.pid)
         if not alive:
             del self._processes[instance_id]
+            self._shutdown_tokens.pop(instance_id, None)
             self.registry.unregister(instance_id)
             return {
                 "instance_id": instance_id,

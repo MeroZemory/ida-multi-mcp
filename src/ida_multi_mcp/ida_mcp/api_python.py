@@ -28,6 +28,9 @@ from .utils import parse_address, get_function
 # ============================================================================
 
 
+_OPTIONAL_IDA_MODULE_CACHE: dict[str, object | None] = {}
+
+
 def _lazy_ida_import(module_name, globals=None, locals=None, fromlist=(), level=0):
     # Security: only allow IDA-related module imports.
     allowed_prefixes = ("ida_", "idaapi", "idautils", "idc")
@@ -41,14 +44,16 @@ def _lazy_ida_import(module_name, globals=None, locals=None, fromlist=(), level=
     except ImportError:
         # Module not available in this IDA build — bind None so user code can
         # guard with `if mod is not None`. This is expected for optional
-        # modules; a typo'd name simply yields None rather than a crash.
-        import sys as _sys
-        print(
-            f"[py_eval] IDA module '{module_name}' could not be imported. "
-            "It may be unavailable in this IDA build.",
-            file=_sys.stderr,
-        )
+        # modules. Expected misses remain bindable as None, while explicit
+        # imports are retried on each call in case the module becomes available.
         return None
+
+
+def _optional_ida_import(module_name):
+    """Load an optional prebound IDA module once across py_eval calls."""
+    if module_name not in _OPTIONAL_IDA_MODULE_CACHE:
+        _OPTIONAL_IDA_MODULE_CACHE[module_name] = _lazy_ida_import(module_name)
+    return _OPTIONAL_IDA_MODULE_CACHE[module_name]
 
 
 def _execute_py_eval_code(code: str, exec_globals: dict) -> str | None:
@@ -154,55 +159,55 @@ def py_eval(
             "__name__": "__py_eval__",
             "idaapi": idaapi,
             "idc": idc,
-            "idautils": _lazy_ida_import("idautils"),
-            "ida_allins": _lazy_ida_import("ida_allins"),
-            "ida_auto": _lazy_ida_import("ida_auto"),
-            "ida_bitrange": _lazy_ida_import("ida_bitrange"),
+            "idautils": _optional_ida_import("idautils"),
+            "ida_allins": _optional_ida_import("ida_allins"),
+            "ida_auto": _optional_ida_import("ida_auto"),
+            "ida_bitrange": _optional_ida_import("ida_bitrange"),
             "ida_bytes": ida_bytes,
             "ida_dbg": ida_dbg,
-            "ida_dirtree": _lazy_ida_import("ida_dirtree"),
-            "ida_diskio": _lazy_ida_import("ida_diskio"),
+            "ida_dirtree": _optional_ida_import("ida_dirtree"),
+            "ida_diskio": _optional_ida_import("ida_diskio"),
             "ida_entry": ida_entry,
-            "ida_expr": _lazy_ida_import("ida_expr"),
-            "ida_fixup": _lazy_ida_import("ida_fixup"),
-            "ida_fpro": _lazy_ida_import("ida_fpro"),
+            "ida_expr": _optional_ida_import("ida_expr"),
+            "ida_fixup": _optional_ida_import("ida_fixup"),
+            "ida_fpro": _optional_ida_import("ida_fpro"),
             "ida_frame": ida_frame,
             "ida_funcs": ida_funcs,
-            "ida_gdl": _lazy_ida_import("ida_gdl"),
-            "ida_graph": _lazy_ida_import("ida_graph"),
+            "ida_gdl": _optional_ida_import("ida_gdl"),
+            "ida_graph": _optional_ida_import("ida_graph"),
             "ida_hexrays": ida_hexrays,
             "ida_ida": ida_ida,
-            "ida_idd": _lazy_ida_import("ida_idd"),
-            "ida_idp": _lazy_ida_import("ida_idp"),
-            "ida_ieee": _lazy_ida_import("ida_ieee"),
+            "ida_idd": _optional_ida_import("ida_idd"),
+            "ida_idp": _optional_ida_import("ida_idp"),
+            "ida_ieee": _optional_ida_import("ida_ieee"),
             "ida_kernwin": ida_kernwin,
-            "ida_libfuncs": _lazy_ida_import("ida_libfuncs"),
+            "ida_libfuncs": _optional_ida_import("ida_libfuncs"),
             "ida_lines": ida_lines,
-            "ida_loader": _lazy_ida_import("ida_loader"),
-            "ida_merge": _lazy_ida_import("ida_merge"),
-            "ida_mergemod": _lazy_ida_import("ida_mergemod"),
-            "ida_moves": _lazy_ida_import("ida_moves"),
+            "ida_loader": _optional_ida_import("ida_loader"),
+            "ida_merge": _optional_ida_import("ida_merge"),
+            "ida_mergemod": _optional_ida_import("ida_mergemod"),
+            "ida_moves": _optional_ida_import("ida_moves"),
             "ida_nalt": ida_nalt,
             "ida_name": ida_name,
-            "ida_netnode": _lazy_ida_import("ida_netnode"),
-            "ida_offset": _lazy_ida_import("ida_offset"),
-            "ida_pro": _lazy_ida_import("ida_pro"),
-            "ida_problems": _lazy_ida_import("ida_problems"),
-            "ida_range": _lazy_ida_import("ida_range"),
-            "ida_regfinder": _lazy_ida_import("ida_regfinder"),
-            "ida_registry": _lazy_ida_import("ida_registry"),
-            "ida_search": _lazy_ida_import("ida_search"),
+            "ida_netnode": _optional_ida_import("ida_netnode"),
+            "ida_offset": _optional_ida_import("ida_offset"),
+            "ida_pro": _optional_ida_import("ida_pro"),
+            "ida_problems": _optional_ida_import("ida_problems"),
+            "ida_range": _optional_ida_import("ida_range"),
+            "ida_regfinder": _optional_ida_import("ida_regfinder"),
+            "ida_registry": _optional_ida_import("ida_registry"),
+            "ida_search": _optional_ida_import("ida_search"),
             "ida_segment": ida_segment,
-            "ida_segregs": _lazy_ida_import("ida_segregs"),
-            "ida_srclang": _lazy_ida_import("ida_srclang"),
-            "ida_strlist": _lazy_ida_import("ida_strlist"),
-            "ida_struct": _lazy_ida_import("ida_struct"),
-            "ida_tryblks": _lazy_ida_import("ida_tryblks"),
+            "ida_segregs": _optional_ida_import("ida_segregs"),
+            "ida_srclang": _optional_ida_import("ida_srclang"),
+            "ida_strlist": _optional_ida_import("ida_strlist"),
+            "ida_struct": _optional_ida_import("ida_struct"),
+            "ida_tryblks": _optional_ida_import("ida_tryblks"),
             "ida_typeinf": ida_typeinf,
-            "ida_ua": _lazy_ida_import("ida_ua"),
-            "ida_undo": _lazy_ida_import("ida_undo"),
+            "ida_ua": _optional_ida_import("ida_ua"),
+            "ida_undo": _optional_ida_import("ida_undo"),
             "ida_xref": ida_xref,
-            "ida_enum": _lazy_ida_import("ida_enum"),
+            "ida_enum": _optional_ida_import("ida_enum"),
             "parse_address": parse_address,
             "get_function": get_function,
         }

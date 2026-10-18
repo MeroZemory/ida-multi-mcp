@@ -1,5 +1,7 @@
 # Architecture
 
+Last updated: 2026-10-18
+
 [← back to README](../README.md)
 
 ## Architecture
@@ -88,3 +90,27 @@ When you open a different binary in an IDA instance:
 | compat.py shims | Single source for IDA 8.5–9.3 API differences |
 | Worker pool for stdio dispatch | Instances are separate processes; serializing at the router wasted that. Only stdout writes are locked (`IDA_MCP_STDIO_WORKERS`) |
 | Deadline fires IDA's `set_cancelled()` | A Python-level timeout cannot preempt a C SDK call; IDA's own cancel flag can (`IDA_MCP_CANCEL_GRACE_SEC`) |
+
+## Managed worker identity and shutdown
+
+Managed workers read canonical module names and the IDB-stored
+`input_fingerprint` through [`ida://idb/identity`](../src/ida_multi_mcp/ida_mcp/api_resources.py),
+not the expensive disk-hashing metadata resource. The manager uses a shared
+30-second identity budget and bounded transient retries; an IDB without a
+canonical module is not registered. See
+[`IdalibManager.spawn_session`](../src/ida_multi_mcp/idalib_manager.py) and the
+[registry v2 contract](.ssot/contracts/registry_contract.md).
+
+The Windows loopback preference is bind-tested by
+[`_preferred_loopback_host`](../src/ida_multi_mcp/idalib_manager.py); both
+[plugin ZeroMCP](../src/ida_multi_mcp/ida_mcp/zeromcp/mcp.py) and
+[router ZeroMCP](../src/ida_multi_mcp/vendor/zeromcp/mcp.py) select IPv6 servers
+and bracket their advertised URLs.
+
+Authenticated shutdown is sent once. A missing acknowledgement does not prove
+non-delivery: the manager retains a shared 300-second in-flight-call drain plus
+60-second save deadline before signal/kill fallback. An acknowledged shutdown
+receives up to 60 seconds for saving within that deadline. This is bounded
+recovery, not a guarantee that an arbitrarily long save cannot be interrupted.
+See [`_terminate_gracefully`](../src/ida_multi_mcp/idalib_manager.py),
+[`_register_shutdown_rpc` and `_close_database_packed`](../src/ida_multi_mcp/idalib_worker.py).

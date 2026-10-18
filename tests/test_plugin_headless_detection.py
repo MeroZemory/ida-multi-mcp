@@ -96,3 +96,21 @@ def test_database_inited_skips_in_headless(monkeypatch):
 
     assert rc == 0
     plugin.start_server.assert_not_called()
+
+
+def test_start_server_passes_input_fingerprint_to_registry(monkeypatch):
+    module = _load_plugin_module(monkeypatch, is_idaq=True)
+    fingerprint = {"algorithm": "sha256", "digest": "ab" * 32}
+    module.get_binary_metadata.return_value["input_fingerprint"] = fingerprint
+    server = MagicMock()
+    server._http_server.server_address = ("127.0.0.1", 12345)
+    monkeypatch.setattr(module, "_load_ida_mcp", lambda: (server, object, lambda: None))
+    rpc = types.ModuleType("ida_multi_mcp.ida_mcp.rpc")
+    rpc.set_download_base_url = MagicMock()
+    monkeypatch.setitem(sys.modules, rpc.__name__, rpc)
+    monkeypatch.setattr(module.threading, "Thread", MagicMock())
+    plugin = module.IdaMultiMcpPlugin()
+
+    plugin.start_server()
+
+    assert module.register_instance.call_args.kwargs["input_fingerprint"] == fingerprint

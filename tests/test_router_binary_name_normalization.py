@@ -26,12 +26,13 @@ class TestRouterBinaryNameNormalization(unittest.TestCase):
                 binary_path=r"D:\1_Project\ultra-codex\references\claude.exe",
                 arch="x64",
                 host="127.0.0.1",
+                input_fingerprint={"algorithm": "sha256", "digest": "a" * 64},
             )
 
             router = InstanceRouter(registry)
             instance = registry.get_instance(instance_id)
 
-            with patch("ida_multi_mcp.router.query_binary_metadata", return_value={"module": "claude.exe"}):
+            with patch("ida_multi_mcp.router.query_binary_identity", return_value={"module": "claude.exe", "input_fingerprint": {"algorithm": "sha256", "digest": "a" * 64}}):
                 self.assertTrue(router._verify_binary_path(instance_id, instance))
 
     def test_verify_binary_path_is_case_insensitive(self):
@@ -48,12 +49,13 @@ class TestRouterBinaryNameNormalization(unittest.TestCase):
                 binary_path="/tmp/claude.exe",
                 arch="x64",
                 host="127.0.0.1",
+                input_fingerprint={"algorithm": "sha256", "digest": "a" * 64},
             )
 
             router = InstanceRouter(registry)
             instance = registry.get_instance(instance_id)
 
-            with patch("ida_multi_mcp.router.query_binary_metadata", return_value={"module": "claude.exe"}):
+            with patch("ida_multi_mcp.router.query_binary_identity", return_value={"module": "claude.exe", "input_fingerprint": {"algorithm": "sha256", "digest": "a" * 64}}):
                 self.assertTrue(router._verify_binary_path(instance_id, instance))
 
 

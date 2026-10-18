@@ -9,6 +9,8 @@ import pytest
 from ida_multi_mcp.registry import InstanceRegistry
 from ida_multi_mcp.router import InstanceRouter
 
+FP = {"algorithm": "sha256", "digest": "a" * 64}
+
 
 @pytest.fixture
 def router_env(tmp_path):
@@ -16,7 +18,7 @@ def router_env(tmp_path):
     reg = InstanceRegistry(str(tmp_path / "inst.json"))
     iid = reg.register(
         pid=42, port=7000, idb_path="/test.i64",
-        binary_name="test.exe", host="127.0.0.1",
+        binary_name="test.exe", host="127.0.0.1", input_fingerprint=FP,
     )
     router = InstanceRouter(reg)
     return reg, router, iid
@@ -69,40 +71,40 @@ class TestExpiredInstance:
 
 class TestBinaryPathVerification:
     def _mock_metadata(self, module_name):
-        return {"path": "/x.i64", "module": module_name}
+        return {"module": module_name, "input_fingerprint": FP}
 
     def test_match(self, router_env):
         _, router, iid = router_env
-        with patch("ida_multi_mcp.router.query_binary_metadata",
+        with patch("ida_multi_mcp.router.query_binary_identity",
                    return_value=self._mock_metadata("test.exe")):
             result = router._verify_binary_path(
-                iid, {"binary_name": "test.exe", "host": "127.0.0.1", "port": 7000})
+                iid, {"binary_name": "test.exe", "host": "127.0.0.1", "port": 7000, "input_fingerprint": FP})
         assert result is True
 
     def test_mismatch(self, router_env):
         _, router, iid = router_env
-        with patch("ida_multi_mcp.router.query_binary_metadata",
+        with patch("ida_multi_mcp.router.query_binary_identity",
                    return_value=self._mock_metadata("other.exe")):
             result = router._verify_binary_path(
-                iid, {"binary_name": "test.exe", "host": "127.0.0.1", "port": 7000})
+                iid, {"binary_name": "test.exe", "host": "127.0.0.1", "port": 7000, "input_fingerprint": FP})
         assert result is False
 
-    def test_query_fails_returns_true(self, router_env):
-        """When metadata query fails, assume valid (benefit of doubt)."""
+    def test_query_fails_returns_false(self, router_env):
+        """When identity cannot be verified, do not forward requests."""
         _, router, iid = router_env
-        with patch("ida_multi_mcp.router.query_binary_metadata",
+        with patch("ida_multi_mcp.router.query_binary_identity",
                    return_value=None):
             result = router._verify_binary_path(
-                iid, {"binary_name": "test.exe", "host": "127.0.0.1", "port": 7000})
-        assert result is True
+                iid, {"binary_name": "test.exe", "host": "127.0.0.1", "port": 7000, "input_fingerprint": FP})
+        assert result is False
 
 
 class TestVerificationCache:
     def test_cache_hit(self, router_env):
         _, router, iid = router_env
-        with patch("ida_multi_mcp.router.query_binary_metadata",
-                   return_value={"module": "test.exe"}) as mock_query:
-            info = {"binary_name": "test.exe", "host": "127.0.0.1", "port": 7000}
+        with patch("ida_multi_mcp.router.query_binary_identity",
+                   return_value={"module": "test.exe", "input_fingerprint": FP}) as mock_query:
+            info = {"binary_name": "test.exe", "host": "127.0.0.1", "port": 7000, "input_fingerprint": FP}
             router._verify_binary_path(iid, info)
             router._verify_binary_path(iid, info)
             assert mock_query.call_count == 1  # cached
@@ -110,24 +112,24 @@ class TestVerificationCache:
     def test_cache_expiry(self, router_env):
         _, router, iid = router_env
         router._cache_timeout = 0  # expire immediately
-        with patch("ida_multi_mcp.router.query_binary_metadata",
-                   return_value={"module": "test.exe"}) as mock_query:
-            info = {"binary_name": "test.exe", "host": "127.0.0.1", "port": 7000}
+        with patch("ida_multi_mcp.router.query_binary_identity",
+                   return_value={"module": "test.exe", "input_fingerprint": FP}) as mock_query:
+            info = {"binary_name": "test.exe", "host": "127.0.0.1", "port": 7000, "input_fingerprint": FP}
             router._verify_binary_path(iid, info)
             time.sleep(0.01)
             router._verify_binary_path(iid, info)
             assert mock_query.call_count == 2  # cache expired
 
-    def test_cached_none_preserves_benefit_of_doubt(self, router_env):
-        """A cached None (query failed) must not turn into a stale-instance error."""
+    def test_failed_identity_read_stays_blocked(self, router_env):
+        """Failed queries must not grant a window of unchecked routing."""
         _, router, iid = router_env
-        info = {"binary_name": "test.exe", "host": "127.0.0.1", "port": 7000}
-        with patch("ida_multi_mcp.router.query_binary_metadata",
+        info = {"binary_name": "test.exe", "host": "127.0.0.1", "port": 7000, "input_fingerprint": FP}
+        with patch("ida_multi_mcp.router.query_binary_identity",
                    return_value=None):
             first = router._verify_binary_path(iid, info)
             second = router._verify_binary_path(iid, info)
-        assert first is True
-        assert second is True
+        assert first is False
+        assert second is False
 
 
 class TestSendRequest:
@@ -144,8 +146,8 @@ class TestSendRequest:
         mock_conn = MagicMock()
         mock_conn.getresponse.return_value = mock_response
 
-        with patch("ida_multi_mcp.router.query_binary_metadata",
-                   return_value={"module": "test.exe"}):
+        with patch("ida_multi_mcp.router.query_binary_identity",
+                   return_value={"module": "test.exe", "input_fingerprint": FP}):
             with patch("http.client.HTTPConnection", return_value=mock_conn):
                 resp = router.route_request("tools/call", {
                     "arguments": {"instance_id": iid, "addr": "0x1000"}
@@ -165,8 +167,8 @@ class TestSendRequest:
 
     def test_connection_failure(self, router_env):
         _, router, iid = router_env
-        with patch("ida_multi_mcp.router.query_binary_metadata",
-                   return_value={"module": "test.exe"}):
+        with patch("ida_multi_mcp.router.query_binary_identity",
+                   return_value={"module": "test.exe", "input_fingerprint": FP}):
             with patch("http.client.HTTPConnection",
                        side_effect=ConnectionRefusedError):
                 resp = router.route_request("tools/call", {
