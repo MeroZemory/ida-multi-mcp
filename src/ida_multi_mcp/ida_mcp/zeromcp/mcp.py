@@ -431,7 +431,7 @@ class McpServer:
 
         print("[MCP] Server stopped")
 
-    _STDIO_MAX_LINE = 10 * 1024 * 1024  # 10MB, matches HTTP limit
+    _STDIO_MAX_LINE: int = 10 * 1024 * 1024  # 10MB, matches HTTP limit
 
     def stdio(self, stdin: BinaryIO | None = None, stdout: BinaryIO | None = None):
         stdin = stdin or sys.stdin.buffer
@@ -740,6 +740,12 @@ class McpServer:
 
     def _type_to_json_schema(self, py_type: Any) -> dict:
         """Convert Python type hint to JSON schema object"""
+        # typing.Any is any JSON value. Without this it fell through to the
+        # primitive fallback below and became {"type": "object"}, so a
+        # dict[str, Any] field declared every value an object and clients that
+        # validate structuredContent against outputSchema rejected real data.
+        if py_type is Any:
+            return {}
         origin = get_origin(py_type)
         # Annotated[T, "description"]
         if origin is Annotated:
