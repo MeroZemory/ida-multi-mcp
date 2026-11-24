@@ -137,8 +137,10 @@ def cleanup_stale_instances(registry: "InstanceRegistry", timeout_seconds: int =
         if pid is not None and not is_process_alive(pid):
             registry.expire_instance(instance_id, reason="process_dead")
             removed.append(instance_id)
+            # stderr: stdout is the MCP JSON-RPC stream in stdio mode.
             print(f"[ida-multi-mcp] Removed dead instance '{instance_id}' "
-                  f"(pid {pid}, {info.get('binary_name', 'unknown')})")
+                  f"(pid {pid}, {info.get('binary_name', 'unknown')})",
+                  file=sys.stderr)
 
     # Also clean up old expired entries
     registry.cleanup_expired()
