@@ -17,7 +17,6 @@ import ida_xref
 import ida_ua
 import ida_name
 import idc
-
 from . import compat
 from .rpc import tool
 from .sync import idasync, tool_timeout
@@ -608,35 +607,27 @@ def find_bytes(
     if limit <= 0 or limit > 10000:
         limit = 10000
 
+    # Regression note (IDA 9.x): the old implementation compiled the pattern
+    # with parse_binpat_str and looped ida_bytes.bin_search(ea, max, vec, flags)
+    # treating the return as a scalar ea. In IDA 9.0+ that overload returns a
+    # tuple (ea, index), so `ea != BADADDR` is always true and `hex(ea)` raised
+    # TypeError -- swallowed by the bare except -> every search returned n=0.
+    # It also mis-checked parse_binpat_str's return (which is
+    # '' on success, non-empty on failure, None on empty input -- not a bool).
+    # We now route through compat.find_pattern, which uses ida_bytes.find_bytes
+    # on 9.0+ (scalar return, native wildcard handling) and legacy bin_search
+    # with tuple-unwrapping on 8.x. Verified live on IDA 9.3 and 9.5.
     results = []
     for pattern in patterns:
         matches = []
         skipped = 0
         more = False
         try:
-            # Parse the pattern
-            compiled = ida_bytes.compiled_binpat_vec_t()
-            err = ida_bytes.parse_binpat_str(
-                compiled, compat.inf_get_min_ea(), pattern, 16
-            )
-            if err:
-                results.append(
-                    {
-                        "pattern": pattern,
-                        "matches": [],
-                        "n": 0,
-                        "cursor": {"done": True},
-                    }
-                )
-                continue
-
-            # Search with early exit
-            ea = compat.inf_get_min_ea()
+            min_ea = compat.inf_get_min_ea()
             max_ea = compat.inf_get_max_ea()
-            while ea != idaapi.BADADDR:
-                ea = ida_bytes.bin_search(
-                    ea, max_ea, compiled, ida_bytes.BIN_SEARCH_FORWARD
-                )
+            ea = min_ea
+            while ea != idaapi.BADADDR and ea < max_ea:
+                ea = compat.find_pattern(ea, max_ea, pattern)
                 if ea != idaapi.BADADDR:
                     if skipped < offset:
                         skipped += 1
@@ -644,9 +635,7 @@ def find_bytes(
                         matches.append(hex(ea))
                         if len(matches) >= limit:
                             # Check if there's more
-                            next_ea = ida_bytes.bin_search(
-                                ea + 1, max_ea, compiled, ida_bytes.BIN_SEARCH_FORWARD
-                            )
+                            next_ea = compat.find_pattern(ea + 1, max_ea, pattern)
                             more = next_ea != idaapi.BADADDR
                             break
                     ea += 1
@@ -808,27 +797,22 @@ def find(
             skipped = 0
             more = False
             try:
+                # IDA 9.x: the raw bytes+mask bin_search overload raises TypeError
+                # from the SWIG layer (swallowed here -> 0 matches). Route through
+                # compat.find_bytes_masked, which uses ida_bytes.find_bytes on 9.0+.
                 ea = compat.inf_get_min_ea()
                 max_ea = compat.inf_get_max_ea()
                 mask = b"\xFF" * len(pattern_bytes)
-                flags = ida_bytes.BIN_SEARCH_FORWARD | ida_bytes.BIN_SEARCH_NOSHOW
-                while ea != idaapi.BADADDR:
-                    ea = ida_bytes.bin_search(
-                        ea, max_ea, pattern_bytes, mask, len(pattern_bytes), flags
-                    )
+                while ea != idaapi.BADADDR and ea < max_ea:
+                    ea = compat.find_bytes_masked(ea, max_ea, pattern_bytes, mask)
                     if ea != idaapi.BADADDR:
                         if skipped < offset:
                             skipped += 1
                         else:
                             matches.append(hex(ea))
                             if len(matches) >= limit:
-                                next_ea = ida_bytes.bin_search(
-                                    ea + 1,
-                                    max_ea,
-                                    pattern_bytes,
-                                    mask,
-                                    len(pattern_bytes),
-                                    flags,
+                                next_ea = compat.find_bytes_masked(
+                                    ea + 1, max_ea, pattern_bytes, mask
                                 )
                                 more = next_ea != idaapi.BADADDR
                                 break
@@ -885,9 +869,12 @@ def find(
                         continue
                     for normalized, size, pattern_bytes in candidates:
                         ea = seg.start_ea
+                        seg_mask = b"\xFF" * size
                         while ea != idaapi.BADADDR and ea < seg.end_ea:
-                            ea = ida_bytes.bin_search(
-                                ea, seg.end_ea, pattern_bytes, b"\xFF" * size, size, ida_bytes.BIN_SEARCH_FORWARD
+                            # IDA 9.x: raw bytes+mask bin_search overload is broken;
+                            # go through compat.find_bytes_masked (find_bytes on 9.0+).
+                            ea = compat.find_bytes_masked(
+                                ea, seg.end_ea, pattern_bytes, seg_mask
                             )
                             if ea == idaapi.BADADDR:
                                 break
