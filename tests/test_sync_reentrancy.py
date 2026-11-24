@@ -190,6 +190,12 @@ def test_reentrant_idasync_does_not_hang_outer_call(sync_mod):
     assert sync_mod.call_stack.empty()
 
 
+def test_sync_errors_reach_the_client_unredacted(sync_mod):
+    """Only McpToolError messages survive JSON-RPC error mapping; anything else
+    becomes 'Internal Error: <type>', which hid the timeout message."""
+    assert issubclass(sync_mod.IDASyncError, sync_mod.McpToolError)
+
+
 def test_reentrant_call_reports_error_instead_of_blocking(sync_mod):
     """The non-empty-call-stack guard must surface, not deadlock the caller."""
     sync_mod.call_stack.put("someone_else")

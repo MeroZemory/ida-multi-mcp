@@ -27,8 +27,13 @@ class IDAError(McpToolError):
         return self.args[0]
 
 
-class IDASyncError(Exception):
-    pass
+class IDASyncError(McpToolError):
+    """Main-thread dispatch failed: timed out, or a reentrant @idasync call.
+
+    An McpToolError so the message reaches the client. Plain exceptions are
+    redacted to their type name, so "Tool timed out after 30.00s" arrived as
+    an opaque "Internal Error: IDASyncError".
+    """
 
 
 class CancelledError(RequestCancelledError):
