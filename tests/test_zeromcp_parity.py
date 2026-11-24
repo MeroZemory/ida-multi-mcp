@@ -79,3 +79,22 @@ class TestNotificationsInitializedParity:
         McpServer = _import_ida_mcp_zeromcp()
         assert "notifications/cancelled" in VendorMcpServer("t").registry.methods
         assert "notifications/cancelled" in McpServer("t").registry.methods
+
+
+# ---------------------------------------------------------------------------
+# JSON schema generation: typing.Any must not be declared an object
+# ---------------------------------------------------------------------------
+
+class TestAnySchema:
+    @pytest.mark.parametrize("which", ["vendor", "ida_mcp"])
+    def test_any_values_are_unconstrained(self, which):
+        from typing import Any
+
+        McpServer = VendorMcpServer if which == "vendor" else _import_ida_mcp_zeromcp()
+        srv = McpServer("test")
+        assert srv._type_to_json_schema(Any) == {}
+        schema = srv._type_to_json_schema(dict[str, Any])
+        assert schema == {"type": "object", "additionalProperties": {}}
+        # Neighbouring behaviour is unchanged.
+        assert srv._type_to_json_schema(dict) == {"type": "object"}
+        assert srv._type_to_json_schema(list[str]) == {"type": "array", "items": {"type": "string"}}

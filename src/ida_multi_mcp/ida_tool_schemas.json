@@ -326,9 +326,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "additionalProperties": {
-              "type": "object"
-            }
+            "additionalProperties": {}
           }
         },
         "callees": {
@@ -345,15 +343,11 @@
         },
         "xrefs": {
           "type": "object",
-          "additionalProperties": {
-            "type": "object"
-          }
+          "additionalProperties": {}
         },
         "comments": {
           "type": "object",
-          "additionalProperties": {
-            "type": "object"
-          }
+          "additionalProperties": {}
         },
         "basic_blocks": {
           "type": "object",
