@@ -39,6 +39,37 @@ def _is_gui_runtime() -> bool:
         return True
 
 
+def _ignore_sigpipe() -> bool:
+    """Stop a vanished MCP client from killing the whole IDA process.
+
+    Embedded IDAPython does not ignore SIGPIPE the way a normal ``python``
+    interpreter does. When a client gives up on a request (timeout, cancel,
+    router restart) and the tool's response is later written to the closed
+    socket, the default SIGPIPE action terminates IDA on the spot: no save, no
+    log, no core dump. Ignoring it turns that write into an ordinary
+    BrokenPipeError, which the HTTP handler already swallows.
+
+    Only replaces the default disposition. A handler someone else installed
+    (getsignal() returns a callable, or None for a C-level handler) is kept.
+    Returns True if SIGPIPE is now ignored.
+    """
+    import signal
+
+    sigpipe = getattr(signal, "SIGPIPE", None)
+    if sigpipe is None:  # Windows has no SIGPIPE
+        return False
+    try:
+        current = signal.getsignal(sigpipe)
+        if current == signal.SIG_IGN:
+            return True
+        if current != signal.SIG_DFL:
+            return False
+        signal.signal(sigpipe, signal.SIG_IGN)
+        return True
+    except (ValueError, OSError):  # not on the main thread, or unsupported
+        return False
+
+
 def _load_ida_mcp():
     """Load the ida_mcp package (bundled with ida-multi-mcp).
 
@@ -100,6 +131,8 @@ class IdaMultiMcpPlugin(idaapi.plugin_t):
                 )
         except Exception:
             pass  # never block plugin load on the version probe itself
+
+        _ignore_sigpipe()
 
         # Install hooks for database lifecycle events
         self.idb_hooks = IdbHooks(self)
