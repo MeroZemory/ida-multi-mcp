@@ -279,3 +279,76 @@ def assert_supported_ida() -> None:
             f"{', '.join(missing)}. If this is IDA 9.0, upgrade to 9.0 SP1 "
             f"(build 241217) or later."
         )
+
+
+# ---------------------------------------------------------------------------
+# Binary search (ida_bytes.bin_search signature/return drifted in IDA 9.0)
+# ---------------------------------------------------------------------------
+#
+# IDA 9.0 changed ida_bytes.bin_search in two ways that silently broke every
+# caller written against the 8.x API:
+#   1. The compiled_binpat_vec_t overload now returns a tuple
+#      ``(match_ea, index)`` instead of a scalar ``ea_t``. Old code that did
+#      ``ea = bin_search(...)`` then ``hex(ea)`` raises TypeError on the tuple.
+#   2. The raw bytes+mask overload
+#      ``bin_search(start, end, image, mask, len, flags)`` -- though still
+#      listed in the docstring -- raises "Wrong number or type of arguments"
+#      from the SWIG layer on 9.3. Confirmed empirically on IDA 9.3 SP2.
+#
+# The user-friendly ``ida_bytes.find_bytes`` (added in 9.0) returns a scalar
+# ``ea_t`` (BADADDR on miss) and internally handles both bytes+mask searches
+# and wildcard pattern strings (accepting both ``?`` and ``??``), so we route
+# through it on 9.0+ and fall back to legacy ``bin_search`` on 8.x. The tuple
+# guard in the fallback keeps it correct even if a 9.x build ever reaches it.
+#
+# See the regression note in api_analysis.find_bytes for the full trace.
+
+import ida_bytes
+
+DEFAULT_SEARCH_FLAGS = ida_bytes.BIN_SEARCH_FORWARD | ida_bytes.BIN_SEARCH_NOSHOW
+
+
+def _unwrap_bin_search(res: "int | tuple[int, int]") -> int:
+    """bin_search returns (ea, index) on 9.x, scalar ea on 8.x. Normalize."""
+    if isinstance(res, tuple):
+        return res[0]
+    return res
+
+
+def find_bytes_masked(
+    ea: int,
+    max_ea: int,
+    data: bytes,
+    mask: bytes | None,
+    flags: int = DEFAULT_SEARCH_FLAGS,
+) -> int:
+    """Search for raw bytes with an optional per-byte 0xFF/0x00 mask.
+    Returns the match address, or idaapi.BADADDR if not found.
+    Works across IDA 8.x and 9.x."""
+    if IDA_GE_90:
+        return ida_bytes.find_bytes(data, ea, range_end=max_ea, mask=mask, flags=flags)
+    # The legacy overload needs an explicit mask; None means every byte counts.
+    full_mask = mask if mask is not None else b"\xFF" * len(data)
+    return _unwrap_bin_search(
+        ida_bytes.bin_search(ea, max_ea, data, full_mask, len(data), flags)
+    )
+
+
+def find_pattern(
+    ea: int,
+    max_ea: int,
+    pattern: str,
+    flags: int = DEFAULT_SEARCH_FLAGS,
+) -> int:
+    """Search for a wildcard byte pattern string, e.g. '48 8B ?? ??'.
+    Returns the match address, or idaapi.BADADDR if not found.
+    Works across IDA 8.x and 9.x."""
+    if IDA_GE_90:
+        # find_bytes parses the pattern string itself and accepts both the
+        # '?' and '??' wildcard spellings.
+        return ida_bytes.find_bytes(pattern, ea, range_end=max_ea, flags=flags)
+    binpat = ida_bytes.compiled_binpat_vec_t()
+    ida_bytes.parse_binpat_str(binpat, ea, pattern, 16)
+    if len(binpat) == 0:  # parse failure: return value is unreliable, length is not
+        return idaapi.BADADDR
+    return _unwrap_bin_search(ida_bytes.bin_search(ea, max_ea, binpat, flags))
