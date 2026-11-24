@@ -468,6 +468,50 @@ def parse_address(addr: str | int) -> int:
     return result
 
 
+def parse_int_arg(value: object, what: str) -> int:
+    """Parse a signed integer argument: an int, or a decimal/0x/negative string.
+
+    Unlike parse_address this accepts negatives (stack offsets, immediates)
+    and never resolves names. An unparseable value raises instead of turning
+    into 0, which silently matched every zero immediate.
+    """
+    if isinstance(value, bool):
+        raise IDAError(f"{what} must be an integer, got {value!r}")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            return int(text, 0)
+        except ValueError:
+            pass
+    raise IDAError(f"{what} must be an integer (e.g. 16, 0x10, -0x50), got {value!r}")
+
+
+def check_choice(value: object, choices: tuple[str, ...], what: str) -> None:
+    """Raise unless value is one of choices, naming the valid options.
+
+    An unknown option used to fall through to an empty result, which reads as
+    "nothing found" rather than "bad argument".
+    """
+    if isinstance(value, str) and value in choices:
+        return
+    raise IDAError(f"Invalid {what} {value!r}: expected one of {', '.join(choices)}")
+
+
+def require_mapped(ea: int, size: int = 1) -> None:
+    """Raise unless [ea, ea+size) starts and ends inside a segment.
+
+    IDA reads unmapped addresses back as 0xFF and accepts patches to them
+    without complaint, so without this check a bad address returned plausible
+    data or a false success.
+    """
+    last = ea + max(size, 1) - 1
+    for probe in (ea, last):
+        if not ida_bytes.is_mapped(probe):
+            raise IDAError(f"Address {hex(probe)} is not mapped in the IDB")
+
+
 def read_bytes_bss_safe(ea: int, size: int) -> bytes:
     """Read bytes from the IDB, substituting zeros for unloaded BSS bytes."""
     if size <= 0:

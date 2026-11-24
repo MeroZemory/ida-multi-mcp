@@ -738,9 +738,13 @@ def func_query(
         if name_regex:
             try:
                 compiled = re.compile(name_regex)
-                filtered = [f for f in filtered if compiled.search(f["name"])]
-            except re.error:
-                pass
+            except re.error as e:
+                # Ignoring the filter returned every function, which reads as
+                # "everything matched".
+                results.append({"query": query, "data": [], "next_offset": None,
+                                "error": f"Invalid name_regex {name_regex!r}: {e}"})
+                continue
+            filtered = [f for f in filtered if compiled.search(f["name"])]
 
         min_size = query.get("min_size")
         if min_size is not None:

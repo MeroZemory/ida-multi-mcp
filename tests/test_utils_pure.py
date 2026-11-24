@@ -10,6 +10,7 @@ import importlib
 import sys
 import types
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -65,7 +66,10 @@ from ida_multi_mcp.ida_mcp.utils import (
     looks_like_address,
     pattern_filter,
     paginate,
+    check_choice,
+    parse_int_arg,
     read_bytes_bss_safe,
+    require_mapped,
     read_int_bss_safe,
 )
 import ida_multi_mcp.ida_mcp.utils as utils
@@ -279,3 +283,49 @@ class TestPaginate:
         page = paginate(data, offset=3, count=10)
         assert page["data"] == [3, 4]
         assert page["next_offset"] is None
+
+
+# ---------------------------------------------------------------------------
+# parse_int_arg / check_choice / require_mapped (bugs found by a live sweep)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("raw, expected", [
+    (16, 16), ("16", 16), ("0x10", 16), ("-0x50", -0x50), (" -80 ", -80), (0, 0),
+])
+def test_parse_int_arg_accepts_signed_ints_and_strings(raw, expected):
+    """Stack offsets are negative; parse_address rejected every one of them."""
+    assert parse_int_arg(raw, "offset") == expected
+
+
+@pytest.mark.parametrize("raw", ["notanumber", "", None, 1.5, True, [1], "0xZZ"])
+def test_parse_int_arg_rejects_garbage_instead_of_returning_zero(raw):
+    """find(type=immediate, targets="notanumber") silently searched for 0."""
+    with pytest.raises(Exception) as exc:
+        parse_int_arg(raw, "immediate target")
+    assert "immediate target must be an integer" in str(exc.value)
+
+
+def test_check_choice():
+    check_choice("both", ("to", "from", "both"), "direction")
+    for bad in ("sideways", "", None, 1):
+        with pytest.raises(Exception) as exc:
+            check_choice(cast(Any, bad), ("to", "from", "both"), "direction")
+        assert "expected one of to, from, both" in str(exc.value)
+
+
+def test_require_mapped_checks_both_ends():
+    """IDA reads unmapped memory as 0xFF and ignores patches to it."""
+    mapped = range(0x1000, 0x2000)
+    # Any: ida_bytes is a MagicMock here; the SDK stubs type it as the real module.
+    stub_bytes: Any = utils.ida_bytes
+    stub_bytes.is_mapped.side_effect = lambda ea: ea in mapped
+    try:
+        require_mapped(0x1000, 0x1000)            # exactly the segment
+        require_mapped(0x1FFF)                    # last byte, default size 1
+        for ea, size in ((0xDEAD0000, 4), (0xFFF, 2), (0x1FFE, 4)):
+            with pytest.raises(Exception) as exc:
+                require_mapped(ea, size)
+            assert "is not mapped in the IDB" in str(exc.value)
+    finally:
+        stub_bytes.is_mapped.side_effect = None
