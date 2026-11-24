@@ -29,6 +29,7 @@ from . import api_resources
 from . import api_survey
 from . import api_composite
 from . import api_similarity
+from . import api_ui
 
 # Re-export key components for external use
 from .sync import idasync, IDAError, IDASyncError, CancelledError
@@ -54,6 +55,7 @@ __all__ = [
     "api_survey",
     "api_composite",
     "api_similarity",
+    "api_ui",
     # Re-exported components
     "idasync",
     "IDAError",
