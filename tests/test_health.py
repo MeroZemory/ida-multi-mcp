@@ -133,6 +133,21 @@ class TestCleanupStaleInstances:
         remaining = populated_registry.list_instances()
         assert len(remaining) == 2
 
+    def test_cleanup_never_writes_to_stdout(self, populated_registry, capsys):
+        """stdout is the MCP JSON-RPC stream in stdio mode.
+
+        The router runs this cleanup at startup; a dead instance left behind by
+        a crashed IDA used to print a log line to stdout, which an MCP client
+        then failed to parse as JSON-RPC.
+        """
+        with patch("ida_multi_mcp.health.is_process_alive", side_effect=lambda pid: pid != 100):
+            removed = cleanup_stale_instances(populated_registry)
+
+        assert removed, "fixture should contain a dead instance"
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "Removed dead instance" in captured.err
+
 
 # ---------------------------------------------------------------------------
 # query_binary_metadata
