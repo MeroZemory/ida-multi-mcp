@@ -1,10 +1,27 @@
 # Troubleshooting
 
-Last updated: 2026-09-19
+Last updated: 2026-11-24
 
 [← back to README](../README.md)
 
 ## Troubleshooting
+
+<details>
+<summary>"IDA is blocked by a modal dialog ..." / tool calls hang while a dialog is open</summary>
+
+IDA runs no MCP request while a modal dialog is open. Requests now fail after
+`IDA_MCP_MODAL_WAIT_SEC` (default 3s) with the dialog's title instead of hanging, and are
+abandoned, so they do not run later when the dialog closes. Close the dialog and retry, or
+call `ui_dialogs(action="list")` to see it and `ui_dialogs(action="dismiss")` to close it.
+
+Dialogs raised by a tool itself are answered with their defaults (batch mode, scoped to
+that tool's run) and never shown. Set `IDA_MCP_SUPPRESS_DIALOGS=0` to see them instead;
+message boxes are then auto-dismissed (`IDA_MCP_DIALOG_POLICY=report` turns that off).
+If IDA stops showing dialogs at all, `ui_dialogs(action="unstick")` resets a leaked batch
+flag and a stuck cancel flag. Implementation: [sync.py](../src/ida_multi_mcp/ida_mcp/sync.py),
+[ui_guard.py](../src/ida_multi_mcp/ida_mcp/ui_guard.py).
+
+</details>
 
 <details>
 <summary>"input identity changed or could not be verified" after updating</summary>

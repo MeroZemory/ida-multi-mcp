@@ -108,6 +108,16 @@ class IdaMultiMcpPlugin(idaapi.plugin_t):
         self.ui_hooks.hook()
         self.hooks_installed = True
 
+        if _is_gui_runtime():
+            # Lets MCP calls fail fast (instead of hanging) behind a modal
+            # dialog and auto-dismisses message boxes a tool itself raised.
+            try:
+                from ida_multi_mcp.ida_mcp import ui_guard
+
+                ui_guard.install()
+            except Exception as e:
+                print(f"[ida-multi-mcp] Dialog guard not installed: {e}")
+
         # If database is already open, start immediately
         if _is_gui_runtime() and idaapi.get_input_file_path():
             self.start_server()

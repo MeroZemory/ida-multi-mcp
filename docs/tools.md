@@ -37,3 +37,6 @@ Local, cross-instance binary code similarity — no cloud, no external service. 
 - **`index_status(instance_id)`** — index readiness, function count, staleness, and background progress.
 - **`similar_functions(instance_id, func, top_k=20, scope="binary"|"instances"|"all")`** — rank the most similar functions within the binary or across instances; returns a per-signal breakdown and confidence label.
 - **`compare_functions(a, b)`** — direct pairwise similarity between two functions (optionally across instances).
+
+### UI recovery (GUI instances)
+- **`ui_dialogs(instance_id, action="list"|"dismiss"|"accept"|"unstick")`** — answers even while IDA is blocked, because it does not run on the IDA main thread. `list` reports the open modal dialog (title, text, buttons, age, whether a tool opened it) and recently auto-dismissed message boxes. `dismiss` presses Escape/Cancel, `accept` the default button; use them only on a dialog your own call opened or when the user asks. `unstick` clears a stuck cancellation flag and a leaked batch-mode flag. See [troubleshooting](troubleshooting.md).

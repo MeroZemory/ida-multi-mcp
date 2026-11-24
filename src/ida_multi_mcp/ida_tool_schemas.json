@@ -3357,6 +3357,111 @@
     }
   },
   {
+    "name": "ui_dialogs",
+    "description": "Inspect or clear a modal dialog that blocks IDA (GUI only).\n\nIDA runs no tool while a modal dialog is open, so other tools fail with\n'IDA is blocked by a modal dialog'. Call this with action='list' to see\nwhich dialog it is. Only dismiss or accept a dialog that your own call\nopened, or when the user asked you to; a dialog the user opened may hold\ntheir unsaved input. Message boxes raised by a tool are already\nauto-dismissed, and listed under recently_dismissed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "list|dismiss|accept|unstick. list (default): report the open modal dialog, if any. dismiss: close it as if Escape/Cancel was pressed. accept: press its default button. unstick: clear a stuck cancellation flag and a leaked batch mode."
+        }
+      },
+      "required": []
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "gui": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "modal": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modal_age_sec": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modal_owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "active_tool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recently_dismissed": {
+          "type": "array"
+        },
+        "dialog": {
+          "type": "object"
+        },
+        "action": {
+          "type": "string"
+        },
+        "cleared_cancelled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "previous_batch": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "state": {
+          "type": "object"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "undefine",
     "description": "Undefine item(s) at each address, converting them back to raw bytes.\n    Size is determined from `end` (exclusive) or `size`; defaults to 1 byte.\n    Uses ida_bytes.DELIT_EXPAND so adjacent items spanning into the range are\n    fully removed. Returns {addr, start, size} on success.",
     "inputSchema": {

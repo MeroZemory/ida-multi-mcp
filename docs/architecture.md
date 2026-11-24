@@ -85,3 +85,5 @@ When you open a different binary in an IDA instance:
 | compat.py shims | Single source for IDA 8.5–9.3 API differences |
 | Worker pool for stdio dispatch | Instances are separate processes; serializing at the router wasted that. Only stdout writes are locked (`IDA_MCP_STDIO_WORKERS`) |
 | Deadline fires IDA's `set_cancelled()` | A Python-level timeout cannot preempt a C SDK call; IDA's own cancel flag can (`IDA_MCP_CANCEL_GRACE_SEC`) |
+| Batch mode scoped to the tool's main-thread run | A dialog raised by a tool blocks every later call; batch answers it by default. Set and restored on the main thread, so it cannot leak or answer a user's dialog (`IDA_MCP_SUPPRESS_DIALOGS`, [sync.py](../src/ida_multi_mcp/ida_mcp/sync.py)) |
+| GUI requests queued with `MFF_NOWAIT` + modal sampler | IDA defers requests while any modal is open; a main-thread QTimer still fires inside it, so a caller can fail fast naming the dialog and abandon the request ([ui_guard.py](../src/ida_multi_mcp/ida_mcp/ui_guard.py), `IDA_MCP_MODAL_WAIT_SEC`, `IDA_MCP_DIALOG_POLICY`) |

@@ -4,19 +4,20 @@ sync.py imports IDA modules at module scope, so every IDA module is replaced
 with a stub before importing it. idaapi.execute_sync is stubbed to call the
 callback inline, which is exactly the situation the real one creates: the
 callback runs on the IDA main thread while the requesting thread waits. The
-idc stub remains as a regression spy for forbidden batch-mode calls.
+idc stub records the batch flag so tests can check it is scoped and restored.
 
 Regression coverage for two bugs:
   1. A reentrant @idasync call drained the LifoQueue, so the outer call's
      finally blocked forever on Queue.get() and froze the IDA main thread.
-  2. @idasync enabled IDA's process-global batch mode, which suppresses and
-     auto-accepts unrelated dialogs in the interactive GUI.
+  2. Batch mode (dialog suppression) leaked: it must be set only for the
+     tool's own main-thread run and restored to its previous value after.
 """
 
 import sys
 import threading
 import time
 import types
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -43,7 +44,7 @@ _SIBLING_MODULES = [
     "http", "framework", "utils", "compat",
     "api_core", "api_analysis", "api_memory", "api_types", "api_modify",
     "api_stack", "api_debug", "api_python", "api_resources", "api_survey",
-    "api_composite", "api_similarity",
+    "api_composite", "api_similarity", "api_ui",
 ]
 
 
@@ -202,20 +203,47 @@ def test_reentrant_call_reports_error_instead_of_blocking(sync_mod):
         tool()
 
 
-def test_idasync_does_not_enable_global_batch_mode(sync_mod):
-    """MCP calls must not suppress or auto-accept unrelated IDA dialogs."""
+def test_idasync_scopes_batch_mode_to_the_tool_run(sync_mod):
+    """Dialogs raised by a tool are answered by default, not shown.
+
+    The batch flag is process-global, so it may only be set for the tool's own
+    main-thread run and must be back to its previous value afterwards; the
+    old leak muted every IDA dialog until restart.
+    """
     observed = {}
 
     @sync_mod.idasync
     def tool():
-        # Inside the tool body, normal interactive prompting must remain on.
         observed["during"] = sync_mod._test_batch_state["value"]
         return "ok"
 
     assert tool() == "ok"
-    assert observed["during"] == 0
+    assert observed["during"] == 1
     assert sync_mod._test_batch_state["value"] == 0
+
+
+def test_batch_mode_opt_out_keeps_interactive_prompts(sync_mod, monkeypatch):
+    """IDA_MCP_SUPPRESS_DIALOGS=0 restores upstream behaviour: no batch at all."""
+    monkeypatch.setenv("IDA_MCP_SUPPRESS_DIALOGS", "0")
+
+    @sync_mod.idasync
+    def tool():
+        return sync_mod._test_batch_state["value"]
+
+    assert tool() == 0
     sys.modules["idc"].batch.assert_not_called()
+
+
+def test_preexisting_batch_mode_is_preserved(sync_mod):
+    """Headless idalib already runs in batch mode; a tool must not clear it."""
+    sync_mod._test_batch_state["value"] = 1
+
+    @sync_mod.idasync
+    def tool():
+        return "ok"
+
+    assert tool() == "ok"
+    assert sync_mod._test_batch_state["value"] == 1
 
 
 def test_native_cancel_fires_at_the_deadline(sync_mod):
@@ -264,7 +292,7 @@ def test_native_cancel_timer_is_cancelled_on_fast_calls(sync_mod):
     assert kernwin.set_cancelled.call_count == 0, "timer was not cancelled"
 
 
-def test_failing_tool_does_not_change_global_batch_mode(sync_mod):
+def test_failing_tool_restores_batch_mode(sync_mod):
     @sync_mod.idasync
     def failing_tool():
         raise ValueError("boom")
@@ -273,5 +301,147 @@ def test_failing_tool_does_not_change_global_batch_mode(sync_mod):
         failing_tool()
 
     assert sync_mod._test_batch_state["value"] == 0
-    sys.modules["idc"].batch.assert_not_called()
     assert sync_mod.call_stack.empty()
+
+
+# ---------------------------------------------------------------------------
+# Modal-dialog guard: GUI requests are queued (MFF_NOWAIT) so a wait can fail
+# fast behind a dialog, and an abandoned request must never run late.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def gui_guard(sync_mod, monkeypatch):
+    """Install a fake GUI: ui_guard 'installed' and an async execute_sync."""
+    _ = sync_mod  # requested only so the IDA stubs are installed first
+    import importlib
+
+    guard = importlib.import_module(f"{_PKG}.ui_guard")
+    idaapi: Any = sys.modules["idaapi"]
+    idaapi.MFF_NOWAIT = 0x4
+    queued = []
+
+    def _execute_sync(callback, flags):
+        if flags & idaapi.MFF_NOWAIT:
+            queued.append(callback)
+            return len(queued)
+        callback()
+        return 1
+
+    idaapi.execute_sync.side_effect = _execute_sync
+    monkeypatch.setenv("IDA_MCP_MODAL_WAIT_SEC", "0.2")
+    with guard._lock:
+        guard._state.update(installed=True, modal=None, since=0.0, owner=None, active_tool=None)
+    try:
+        yield guard, queued
+    finally:
+        with guard._lock:
+            guard._state.update(installed=False, modal=None, owner=None, active_tool=None)
+
+
+def _set_modal(guard, kind="dialog", title="Jump!", owner=None, age=10.0):
+    with guard._lock:
+        guard._state.update(
+            modal={"kind": kind, "class": "QDialog", "title": title, "text": ["Jump to address"]},
+            since=time.monotonic() - age,
+            owner=owner,
+        )
+
+
+def test_gui_request_runs_normally_without_a_dialog(sync_mod, gui_guard):
+    _guard, queued = gui_guard
+
+    @sync_mod.idasync
+    def tool():
+        return "ran"
+
+    box = {}
+    worker = threading.Thread(target=lambda: box.setdefault("r", tool()), daemon=True)
+    worker.start()
+    deadline = time.monotonic() + 3
+    while not queued and time.monotonic() < deadline:
+        time.sleep(0.01)
+    queued.pop()()  # the IDA main thread services the request
+    worker.join(3)
+    assert box["r"] == "ran"
+
+
+def test_request_behind_user_dialog_fails_fast_and_never_runs_late(sync_mod, gui_guard):
+    """IDA defers requests while the user has a modal open. The caller must get
+    a clear error naming the dialog, and the queued request must be dropped."""
+    guard, queued = gui_guard
+    _set_modal(guard)
+    ran = []
+
+    @sync_mod.idasync
+    def tool():
+        ran.append(True)
+        return "should not run"
+
+    with pytest.raises(sync_mod.IDASyncError, match="NOT executed") as exc:
+        _call_without_hanging(tool, timeout=5)
+    assert "Jump!" in str(exc.value)
+
+    # The dialog closes and IDA finally services the stale request.
+    for callback in queued:
+        callback()
+    assert ran == [], "abandoned request executed after the caller saw an error"
+    assert sync_mod.call_stack.empty()
+
+
+def test_wait_box_does_not_count_as_blocking(gui_guard):
+    """A progress dialog is not a question; requests just wait for it."""
+    guard, _queued = gui_guard
+    _set_modal(guard, kind="wait_box", title="Please wait...")
+    assert guard.blocking_modal() is None
+
+
+def test_tool_stuck_in_its_own_dialog_reports_instead_of_hanging(sync_mod, gui_guard):
+    """A non-message-box dialog the tool opened cannot be auto-dismissed; the
+    caller must be told, not left waiting forever."""
+    guard, queued = gui_guard
+    entered = threading.Event()
+    release = threading.Event()
+
+    @sync_mod.idasync
+    def opens_dialog():
+        entered.set()
+        _ = release.wait(5)  # stands in for a nested modal event loop
+        return "late"
+
+    box = {}
+
+    def caller():
+        try:
+            _ = opens_dialog()
+        except Exception as e:  # noqa: BLE001 - asserted below
+            box["err"] = e
+
+    worker = threading.Thread(target=caller, daemon=True)
+    worker.start()
+    deadline = time.monotonic() + 3
+    while not queued and time.monotonic() < deadline:
+        time.sleep(0.01)
+    main = threading.Thread(target=queued.pop(), daemon=True)  # the "main thread"
+    main.start()
+    assert entered.wait(3)
+    _set_modal(guard, title="Custom form", owner="opens_dialog")
+    worker.join(5)
+    release.set()
+    main.join(5)
+    assert isinstance(box.get("err"), sync_mod.IDASyncError)
+    assert "waiting on a dialog it opened" in str(box["err"])
+
+
+def test_profile_timeout_never_raises_inside_the_guard_tick(sync_mod):
+    """The sampler runs nested inside a stuck tool; the timeout profiler must
+    skip its frames or it would kill the sampler instead of the tool."""
+    _ = sync_mod  # installs the IDA stubs the package import below needs
+    import importlib
+
+    guard = importlib.import_module(f"{_PKG}.ui_guard")
+    frame = types.SimpleNamespace(f_globals={"__name__": guard.__name__})
+    assert guard.is_guard_frame(frame)
+    other = types.SimpleNamespace(f_globals={"__name__": "some.tool.module"})
+    assert not guard.is_guard_frame(other)
+
