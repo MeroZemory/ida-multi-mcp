@@ -20,6 +20,7 @@ from .utils import (
     normalize_list_input,
     parse_address,
     read_bytes_bss_safe,
+    require_mapped,
     read_int_bss_safe,
 )
 
@@ -58,6 +59,8 @@ def get_bytes(regions: list[MemoryRead] | MemoryRead) -> list[dict]:
             if size < 0 or size > _MAX_READ_SIZE:
                 raise ValueError(f"Size must be between 0 and {_MAX_READ_SIZE} (got {size})")
             ea = parse_address(addr)
+            # IDA reads unmapped memory back as 0xFF, which looked like data.
+            require_mapped(ea, size)
             data = " ".join(f"{x:#02x}" for x in read_bytes_bss_safe(ea, size))
             results.append({"addr": addr, "data": data})
         except Exception as e:
@@ -270,6 +273,8 @@ def patch(patches: list[MemoryPatch] | MemoryPatch) -> list[dict]:
             if len(data) > _MAX_READ_SIZE:
                 raise ValueError(f"Patch size {len(data)} exceeds maximum of {_MAX_READ_SIZE} bytes")
 
+            # patch_bytes silently ignores unmapped addresses; we reported ok.
+            require_mapped(ea, len(data))
             ida_bytes.patch_bytes(ea, data)
             results.append(
                 {"addr": patch["addr"], "size": len(data), "ok": True, "error": None}
@@ -314,6 +319,7 @@ def put_int(
                 raise ValueError(f"Value {value_text} does not fit in {normalized}")
 
             ea = parse_address(addr)
+            require_mapped(ea, size)
             ida_bytes.patch_bytes(ea, data)
             results.append(
                 {

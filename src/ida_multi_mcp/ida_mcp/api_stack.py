@@ -17,6 +17,7 @@ from .utils import (
     normalize_list_input,
     normalize_dict_list,
     parse_address,
+    parse_int_arg,
     get_type_by_name,
     StackVarDecl,
     StackVarDelete,
@@ -72,7 +73,9 @@ def declare_stack(
                 )
                 continue
 
-            ea = parse_address(offset)
+            # Frame-pointer relative and signed: locals are negative (var_50 is
+            # -0x50). parse_address rejected every negative offset.
+            ea = parse_int_arg(offset, "offset")
 
             frame_tif = ida_typeinf.tinfo_t()
             if not ida_frame.get_func_frame(frame_tif, func):
